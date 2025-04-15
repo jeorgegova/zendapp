@@ -6,7 +6,7 @@
  */
 
 import * as React from 'react';
-import Navigation from './Navigation';
+import Navigation from './src/screens/Navigation';
 
 export default function App() {
   return <Navigation />;
