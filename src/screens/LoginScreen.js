@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { supabase } from '../lib/supabase';
 
@@ -6,16 +6,45 @@ export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  const handleLogin = async () => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
 
-    if (error) {
-      Alert.alert('Error', error.message);
-    } else {
-      navigation.replace('Home');
+
+  const handleLogin = async () => {
+    try {
+      // Check if user exists in perfiles table
+      console.log("Intentando login con:", {
+        email: email,
+        password: password
+      });
+      
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('login', email)
+        .eq('password', password);
+
+      console.log("Respuesta completa:", {
+        data: profileData,
+        error: profileError
+      });
+
+      if (profileError) {
+        console.log('Error de perfil:', profileError);
+        Alert.alert('Error', 'Error al verificar el perfil del usuario');
+        return;
+      }
+
+      if (!profileData || profileData.length === 0) {
+        console.log('No se encontraron coincidencias');
+        Alert.alert('Error', 'Usuario no encontrado en la base de datos');
+        return;
+      }
+
+      // If everything is successful, show success message
+      console.log("Usuario encontrado:", profileData[0]);
+      Alert.alert('Éxito', 'Usuario encontrado correctamente');
+    } catch (error) {
+      console.log("Error del inicio:", error);
+      Alert.alert('Error', 'Ocurrió un error durante el inicio de sesión');
     }
   };
 
