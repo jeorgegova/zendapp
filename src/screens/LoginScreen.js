@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { supabase } from '../lib/supabase';
+import { useNavigation } from '@react-navigation/native';
 
-export default function LoginScreen({ navigation }) {
+export default function LoginScreen({  }) {
+  const navigation = useNavigation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
@@ -41,7 +43,8 @@ export default function LoginScreen({ navigation }) {
 
       // If everything is successful, show success message
       console.log("Usuario encontrado:", profileData[0]);
-      Alert.alert('Éxito', 'Usuario encontrado correctamente');
+      navigation.navigate('Home', { user: profileData[0] });
+      //Alert.alert('Éxito', 'Usuario encontrado correctamente');
     } catch (error) {
       console.log("Error del inicio:", error);
       Alert.alert('Error', 'Ocurrió un error durante el inicio de sesión');
