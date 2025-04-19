@@ -43,7 +43,7 @@ export default function LoginScreen({  }) {
 
       // If everything is successful, show success message
       console.log("Usuario encontrado:", profileData[0]);
-      navigation.navigate('Home', { user: profileData[0] });
+      navigation.navigate('Main', { user: profileData[0] });
       //Alert.alert('Éxito', 'Usuario encontrado correctamente');
     } catch (error) {
       console.log("Error del inicio:", error);
