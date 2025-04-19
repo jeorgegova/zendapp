@@ -33,6 +33,11 @@ local.properties
 .cxx/
 *.keystore
 !debug.keystore
+# Evita subir las fuentes linkeadas
+android/app/src/main/assets/fonts/
+ios/link-assets-manifest.json
+android/link-assets-manifest.json
+
 
 # node.js
 #
