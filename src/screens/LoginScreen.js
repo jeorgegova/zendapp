@@ -3,7 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'reac
 import { supabase } from '../lib/supabase';
 import { useNavigation } from '@react-navigation/native';
 
-export default function LoginScreen({  }) {
+export default function LoginScreen({ }) {
   const navigation = useNavigation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -17,7 +17,7 @@ export default function LoginScreen({  }) {
         email: email,
         password: password
       });
-      
+
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
         .select('*')

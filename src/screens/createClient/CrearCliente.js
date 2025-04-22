@@ -14,6 +14,8 @@ import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/FontAwesome';
 
 const CrearCliente = (props) => {
+  console.log('props', props);
+  
   const navigation = useNavigation();
   const [formData, setFormData] = useState({
     nombre: '',
@@ -53,6 +55,21 @@ const CrearCliente = (props) => {
   const handleSubmit = () => {
     if (isFormValid) {
       console.log('Datos del formulario:', formData);
+      const dataSend = {
+        client: {
+          name: formData.nombre + ' ' + formData.apellido,
+          email: formData.alias,
+          direccion: formData.direccion,
+          telefono: formData.telefono,
+          ruc: formData.documento,
+        },
+        invoice: {
+          amount: formData.valor,
+          interes: formData.interes,
+        },
+        caja_id: props.route.params.cajaId
+
+      }
     }
   };
 
@@ -76,7 +93,7 @@ const CrearCliente = (props) => {
           <View style={styles.formContainer}>
             <View style={styles.card}>
               <Text style={styles.sectionTitle}>Información Personal</Text>
-              
+
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>Nombre</Text>
                 <TextInput
@@ -158,7 +175,7 @@ const CrearCliente = (props) => {
 
             <View style={styles.card}>
               <Text style={styles.sectionTitle}>Información de Contacto</Text>
-              
+
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>Dirección</Text>
                 <TextInput
@@ -197,7 +214,7 @@ const CrearCliente = (props) => {
 
             <View style={styles.card}>
               <Text style={styles.sectionTitle}>Información de la Venta</Text>
-              
+
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>Valor</Text>
                 <TextInput
@@ -235,8 +252,8 @@ const CrearCliente = (props) => {
               </View>
             </View>
 
-            <TouchableOpacity 
-              style={[styles.saveButton, !isFormValid && styles.saveButtonDisabled]} 
+            <TouchableOpacity
+              style={[styles.saveButton, !isFormValid && styles.saveButtonDisabled]}
               onPress={handleSubmit}
               disabled={!isFormValid}
             >
