@@ -2,13 +2,32 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { useNavigation } from '@react-navigation/native';
+import { getData, getDbConnection } from '../database/db';
 
 export default function LoginScreen({ }) {
   const navigation = useNavigation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-
+  useEffect(() => {
+    const LoadData = async () => {
+      try {
+        console.log('Intentando conectar con la BD local...');
+        const db = await getDbConnection();
+        console.log('Conexión exitosa.');
+  
+        const parametrizacion = await getData(
+          db,
+          `select * from parametrizacion `,
+        );
+        console.log('parametrizacion', parametrizacion);
+      } catch (error) {
+        console.error('Error al cargar datos de parametrización:', error);
+      }
+    };
+    LoadData();
+  }, []);
+  
 
   const handleLogin = async () => {
     try {
