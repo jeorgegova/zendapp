@@ -43,7 +43,10 @@ const menuOptions = {
   ],
 };
 
-function MainTabs() {
+function MainTabs(route) {
+  const { user } = route.route.params;
+  console.log('Usuario:', user);
+  
   const [perfil, setPerfil] = useState('seller');
 
   return (
@@ -74,6 +77,7 @@ function MainTabs() {
             ),
             tabBarLabel: item.title,
           }}
+          initialParams={{ user }} // Pasar el usuario como parámetro
         />
       ))}
     </Tab.Navigator>
