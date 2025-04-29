@@ -5,7 +5,7 @@ import { useNavigation } from '@react-navigation/native';
 import { getData, getDbConnection } from '../database/db';
 import { getInvoice } from '../services/services';
 
-export default function LoginScreen({  }) {
+export default function LoginScreen({ }) {
   const navigation = useNavigation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -37,7 +37,7 @@ export default function LoginScreen({  }) {
         email: email,
         password: password
       });
-      
+
       const { data: profileData, error: profileError } = await supabase
         .from('users')
         .select('*')
