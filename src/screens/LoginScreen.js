@@ -14,10 +14,11 @@ import {
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { useNavigation } from '@react-navigation/native';
-import { getData, getDbConnection } from '../database/db';
 import Icon from 'react-native-vector-icons/FontAwesome';
+import { getData, getDbConnection, updateData } from '../database/db';
 
 export default function LoginScreen() {
+  let db
   const navigation = useNavigation();
   const [email, setEmail] = useState('gogicolombia@gmail.com');
   const [password, setPassword] = useState('Admin1234!');
@@ -29,10 +30,13 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+
     const LoadData = async () => {
       try {
-        const db = await getDbConnection();
-        await getData(db, `select * from parametrizacion`);
+        db = await getDbConnection();
+        const datosParams = await getData(db, `select * from parametrizacion`);
+        console.log('Datos de parametrización cargados....:', datosParams);
+
       } catch (error) {
         console.error('Error al cargar datos de parametrización:', error);
       }
@@ -52,10 +56,22 @@ export default function LoginScreen() {
         Alert.alert('Error', error.message || 'Usuario o contraseña incorrectos');
         return;
       }
+      console.log('Usuario logueado:', data);
 
+
+      // Guardar token en BD---.-.-.-.-.-.-.-.-.-
+      const access_token = await updateData(db, 'parametrizacion', {
+        id: 2,
+        valor: data.session.access_token,
+      });
+      const resultadoVehicles = await updateData(db, 'parametrizacion', {
+        id: 5,
+        valor: data.user.id,
+      });
       navigation.navigate('Main', { user: data.user });
     } catch (error) {
       Alert.alert('Error', 'Ocurrió un error durante el inicio de sesión');
+      console.error('Error al iniciar sesión:', error);
     } finally {
       setLoading(false);
     }
@@ -96,7 +112,7 @@ export default function LoginScreen() {
       /> */}
 
       <Text style={styles.title}>Bienvenido a Zenda</Text>
-      
+
       <Text style={styles.label}>Correo electrónico</Text>
       <TextInput
         placeholder="tucorreo@ejemplo.com"
@@ -118,7 +134,7 @@ export default function LoginScreen() {
           style={styles.inputPassword}
           placeholderTextColor="#888"
         />
-        <TouchableOpacity 
+        <TouchableOpacity
           onPress={() => setShowPassword(!showPassword)}
           style={styles.iconButton}
         >
@@ -130,8 +146,8 @@ export default function LoginScreen() {
         </TouchableOpacity>
       </View>
 
-      <TouchableOpacity 
-        onPress={handleLogin} 
+      <TouchableOpacity
+        onPress={handleLogin}
         style={styles.button}
         disabled={loading}
       >
@@ -142,8 +158,8 @@ export default function LoginScreen() {
         )}
       </TouchableOpacity>
 
-      <TouchableOpacity 
-        onPress={() => setModalVisible(true)} 
+      <TouchableOpacity
+        onPress={() => setModalVisible(true)}
         style={styles.registerButton}
       >
         <Text style={styles.registerButtonText}>¿No tienes cuenta? Regístrate</Text>
@@ -159,7 +175,7 @@ export default function LoginScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
             <Text style={styles.modalTitle}>Crear nueva cuenta</Text>
-            
+
             <Text style={styles.label}>Correo electrónico</Text>
             <TextInput
               placeholder="tucorreo@ejemplo.com"
@@ -181,7 +197,7 @@ export default function LoginScreen() {
                 style={styles.inputPassword}
                 placeholderTextColor="#888"
               />
-              <TouchableOpacity 
+              <TouchableOpacity
                 onPress={() => setShowRegPassword(!showRegPassword)}
                 style={styles.iconButton}
               >

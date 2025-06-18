@@ -14,9 +14,12 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import { supabase } from '../../lib/supabase';
+import { getData } from '../../database/db';
+import { getDbConnection } from '../../database/db';
 
 const CrearCliente = (props) => {
     const navigation = useNavigation();
+    let db;
     const [formData, setFormData] = useState({
         nombre: '',
         apellido: '',
@@ -36,7 +39,17 @@ const CrearCliente = (props) => {
             return value.trim() !== '';
         });
         setIsFormValid(isValid);
+        LoadData();
     }, [formData]);
+
+    const LoadData = async () => {
+        try {
+            db = await getDbConnection();
+
+        } catch (error) {
+            console.error('Error al cargar datos de parametrización:', error);
+        }
+    };
 
     const handleChange = (name, value) => {
         setFormData({
@@ -53,36 +66,65 @@ const CrearCliente = (props) => {
     };
 
     const handleSubmit = async () => {
+        const parametrizacion = await getData(
+            db,
+            "select valor from parametrizacion",
+        );
+
+        console.log('parametrizacion', parametrizacion);
+
+
         if (isFormValid) {
-            // Primero obtenemos los valores del formulario
-            const { nombre, apellido, alias, telefono, direccion, documento, valor, plazo, interes } = formData;
+            const {
+                nombre,
+                apellido,
+                alias,
+                telefono,
+                direccion,
+                documento,
+                valor,
+                plazo,
+                interes
+            } = formData;
 
-            // Llamamos al procedimiento almacenado desde Supabase
-            const { data, error } = await supabase.rpc('crear_venta_completa', {
-                p_nombre: nombre,
-                p_apellido: apellido,
-                p_alias: alias,
-                p_email: '', // Agregar correo si lo tienes en el formulario
-                p_telefono: telefono,
-                p_direccion: direccion,
-                p_documento: documento,
-                p_amount: parseFloat(valor), // Asegúrate de convertirlo a número
-                p_usuario_id: 1, // Pasa el id del usuario si está disponible
-                p_caja_id: 1, // Pasa el id de la caja si lo tienes en el formulario
-                p_fecha: new Date().toISOString() // Fecha actual
-            });
+            try {
+                const response = await fetch('https://gwpwntdwogxzmtegaaom.supabase.co/functions/v1/create_sale', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${parametrizacion[1].valor}`
+                    },
+                    body: JSON.stringify({
+                        nombre,
+                        apellido,
+                        alias,
+                        email: '', // agregar si tienes
+                        telefono,
+                        direccion,
+                        documento,
+                        monto: parseFloat(valor),
+                        vendedor_id: parametrizacion[4].valor, 
+                        caja_id: 'fb752968-9a6a-46cb-bcd6-83c3d4f82e1c',
+                        plazo_id: parseInt(plazo),
+                        interes_id: parseInt(interes)
+                    })
+                });
 
-            if (error) {
-                console.error('Error al crear la venta:', error);
-                // Aquí puedes mostrar un mensaje de error al usuario
-            } else {
-                console.log('Factura creada con ID:', data);
-                Alert.alert('Factura Creada', data)
-                // Redirige o actualiza la UI según sea necesario
-                //navigation.goBack(); 
+                const result = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(result.error || 'Error desconocido');
+                }
+
+                console.log('Venta creada, ID factura:', result.id_factura);
+                Alert.alert('Éxito', `Factura creada con ID: ${result.id_factura}`);
+            } catch (err) {
+                console.error('Error al crear la venta:', err);
+                Alert.alert('Error', err.message || 'Hubo un problema al crear la venta');
             }
         }
     };
+
 
     return (
         <SafeAreaView style={styles.container}>
