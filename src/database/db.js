@@ -66,42 +66,57 @@ export async function insertOrReplaceDataCaja(db, table, data) {
   return db.executeSql(scriptInsert + scriptValues);
   }
 
-export async function insertOrReplaceData(db, table, data) {
-  if (!data || typeof data !== 'object') {
+  export async function insertOrReplaceData(db, table, data) {
+    // Validar que los datos sean un arreglo no vacío
+    if (!Array.isArray(data) || data.length === 0) {
       console.error('Datos no válidos para insertar/reemplazar:', data);
       throw new Error('Datos no válidos para insertar/reemplazar');
-  }
-  const dataArray = Object.entries(data);
-  let scriptInsert = `INSERT OR REPLACE INTO ${table} (`;
-  let scriptValues = ' VALUES (';
-  for (let index = 0; index < dataArray.length; index++) {
-      const [key, value] = dataArray[index];
-      // Verificar si el valor es undefined o null
-      if (value === undefined || value === null) {
-          console.warn(`El valor para la clave "${key}" es undefined o null. Se insertará como NULL.`);
-          scriptValues += 'NULL';
-      } else {
-          // Escapar comillas simples en cadenas
-          const escapedValue = typeof value === 'string' ? `'${value.replace(/'/g, "''")}'` : value;
-          scriptValues += escapedValue;
+    }
+  
+    // Obtener las columnas del primer objeto
+    const columns = Object.keys(data[0]);
+    if (columns.length === 0) {
+      console.error('No se encontraron columnas en los datos:', data[0]);
+      throw new Error('No se encontraron columnas en los datos');
+    }
+  
+    // Validar que todos los objetos tengan las mismas columnas
+    for (const item of data) {
+      const itemColumns = Object.keys(item);
+      if (itemColumns.length !== columns.length || !columns.every(col => itemColumns.includes(col))) {
+        console.error('Inconsistencia en las columnas de los datos:', item);
+        throw new Error('Los objetos deben tener las mismas columnas');
       }
-      scriptInsert += key;
-      if (index !== dataArray.length - 1) {
-          scriptInsert += ',';
-          scriptValues += ',';
-      }
-  }
-  scriptInsert += ')';
-  scriptValues += ')';
-  const finalQuery = scriptInsert + scriptValues;
-  //console.log('Consulta SQL generada:', finalQuery); 
-  try {
+    }
+  
+    // Generar la parte inicial de la consulta
+    const scriptInsert = `INSERT OR REPLACE INTO ${table} (${columns.join(', ')}) VALUES `;
+    let scriptValues = [];
+  
+    // Preparar los valores para cada fila
+    for (const item of data) {
+      const values = columns.map((col) => {
+        const value = item[col];
+        if (value === undefined || value === null) {
+          return 'NULL';
+        }
+        // Escapar comillas simples en cadenas
+        return typeof value === 'string' ? `'${value.replace(/'/g, "''")}'` : value;
+      });
+      scriptValues.push(`(${values.join(', ')})`);
+    }
+  
+    // Unir la consulta final
+    const finalQuery = scriptInsert + scriptValues.join(', ');
+    // console.log('Consulta SQL generada:', finalQuery);
+  
+    try {
       return await db.executeSql(finalQuery);
-  } catch (error) {
+    } catch (error) {
       console.error(`Error ejecutando la consulta: ${finalQuery}`, error);
       throw error;
+    }
   }
-}
 
 export async function insertOrReplaceAllDocuments(db, documents) {
   if (documents.length === 0) return; // Si no hay documentos, no hacer nada
