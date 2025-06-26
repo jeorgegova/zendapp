@@ -16,6 +16,7 @@ import { supabase } from '../lib/supabase';
 import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import { getData, getDbConnection, insertOrReplaceData, updateData } from '../database/db';
+import { AuthService } from '../services/services';
 
 export default function LoginScreen() {
   let db
@@ -46,67 +47,13 @@ export default function LoginScreen() {
 
   const handleLogin = async () => {
     setLoading(true);
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const result = await AuthService(db, email, password);
 
-      if (error) {
-        Alert.alert('Error', error.message || 'Usuario o contraseña incorrectos');
-        return;
-      }
-
-      console.log('Usuario logueado:', data);
-
-      const { access_token } = data.session;
-      const userId = data.user.id;
-
-      // Guardar datos básicos en parametrización
-      await Promise.all([
-        updateData(db, 'parametrizacion', { id: 2, valor: access_token }),
-        updateData(db, 'parametrizacion', { id: 5, valor: userId })
-      ]);
-
-      // Obtener el perfil del usuario desde función remota
-      const response = await fetch(
-        'https://gwpwntdwogxzmtegaaom.supabase.co/functions/v1/get-user-profile',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${access_token}`
-          },
-          body: JSON.stringify({ id: userId })
-        }
-      );
-
-      if (!response.ok) {
-        const errorResult = await response.json();
-        throw new Error(errorResult.error || 'Error al obtener el perfil');
-      }
-
-      const result = await response.json();
-      const { profile, concepts, caja, movimientos } = result;
-
-      // Guardar datos del perfil
-      await Promise.all([
-        updateData(db, 'parametrizacion', { id: 6, valor: profile.rol }),
-        updateData(db, 'parametrizacion', { id: 7, valor: profile.nombre }),
-        updateData(db, 'parametrizacion', { id: 8, valor: profile.superior_id })
-      ]);
-
-      // Insertar datos relacionados
-      await Promise.all([
-        insertOrReplaceData(db, 'concepts', concepts),
-        insertOrReplaceData(db, 'cajas', [caja]),
-        insertOrReplaceData(db, 'movimientos', movimientos)
-      ]);
-
-      navigation.navigate('Main', { user: data.user });
-
-    } catch (error) {
-      console.error('Error al iniciar sesión:', error);
-      Alert.alert('Error', error.message || 'Ocurrió un error durante el inicio de sesión');
-    } finally {
+    if (result.success) {
       setLoading(false);
+      navigation.replace('Main', { user: result.user });
+    } else {
+      Alert.alert('Error', result.message);
     }
   };
 
