@@ -14,6 +14,68 @@ export async function createTables(db) {
   /*const query =
     'CREATE TABLE ordenTrabajoPDA ( id INTEGER primary key autoincrement UNIQUE,estado TEXT,consecutivoTransmision INTEGER,idOrden INTEGER,cuenta TEXT,propietario TEXT,departamento TEXT,municipio TEXT,ubicacion TEXT,direccion TEXT,claseServicio TEXT,estrato TEXT,idNodo TEXT,ruta TEXT,estadoCuenta TEXT,fechaAtencion TEXT,horaIni TEXT,horaFin TEXT,pda TEXT,estadoOrdenTrabajo TEXT,observacionTrabajo TEXT,observacionPad TEXT,usuario TEXT,fechaHoraEstado TEXT,fechaVencimiento TEXT,tipo TEXT,registrado INTEGER,codigoApertura TEXT,solicitud TEXT,bodega TEXT,horaInicialAtiende TEXT,horaFinalAtiende TEXT,personaAtiende TEXT,telefonoPersonaAtiende TEXT,codigoPrograma TEXT,industria TEXT,procedencia TEXT,grupoTrabajo TEXT,contratista TEXT,tipoOrden INTEGER,validacion TEXT,ciclo TEXT,meses_deuda TEXT,claseSolicitud TEXT,tipoSolicitud TEXT,dependencia TEXT,tipoAccion TEXT,dependenciaAsignada TEXT,consecutivoAccion TEXT,cargaInstalada TEXT,cargaContratada TEXT,campana TEXT,cobroMo TEXT,cobroMat TEXT,capacidad TEXT,actividadCiiu TEXT,nivelTension TEXT,propiedad TEXT,barrioVereda TEXT,antiguedad TEXT,codigoDescarga TEXT,fechaDescarga TEXT,pqr TEXT,causa TEXT,usuarioGenero TEXT,telefono TEXT,circuito TEXT,sector TEXT,saldo TEXT,mesDeuda TEXT,observacionLectura TEXT,ultimaLectura TEXT,fechaLectura TEXT,ultimoConsumo TEXT,x TEXT,y TEXT,z TEXT,pintadoApoyo TEXT,usoPredio TEXT,reglaOro TEXT,serieMedidor TEXT,tipoRed TEXT,planeador TEXT,programa TEXT,nombrePrograma TEXT,serie TEXT,tipoUsuario TEXT,subestacion TEXT,nodoTransformador TEXT,nodoAcometida TEXT)';
   return db.executeSql(query);*/
+
+  // Crear tabla para seguimiento de sincronización pendiente
+  const syncTableQuery = `
+    CREATE TABLE IF NOT EXISTS pending_sync (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      table_name TEXT NOT NULL,
+      record_id INTEGER,
+      operation_type TEXT NOT NULL,
+      data TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      synced INTEGER DEFAULT 0,
+      sync_attempts INTEGER DEFAULT 0
+    )
+  `;
+  
+  await db.executeSql(syncTableQuery);
+  
+  // Crear índice para mejorar rendimiento
+  const indexQuery = 'CREATE INDEX IF NOT EXISTS idx_pending_sync_table ON pending_sync(table_name)';
+  await db.executeSql(indexQuery);
+}
+
+export async function saveOfflineTransaction(db, tableName, record, operationType = 'insert') {
+  const pendingRecord = {
+    table_name: tableName,
+    record_id: record.id,
+    operation_type: operationType,
+    data: JSON.stringify(record)
+  };
+  
+  await insertOrReplaceData(db, 'pending_sync', [pendingRecord]);
+  
+  return { success: true, offline: true, message: 'Registro guardado localmente, pendiente de sincronización' };
+}
+
+export async function getPendingSyncRecords(db, limit = 10) {
+  const records = await getData(db, `
+    SELECT * FROM pending_sync 
+    WHERE synced = 0 
+    ORDER BY created_at ASC
+    LIMIT ${limit}
+  `);
+  return records;
+}
+
+export async function markAsSynced(db, recordId) {
+  await updateData(db, 'pending_sync', {
+    id: recordId,
+    synced: 1,
+    sync_attempts: 1
+  });
+}
+
+export async function incrementSyncAttempts(db, recordId) {
+  const record = await getData(db, `SELECT * FROM pending_sync WHERE id = ${recordId}`);
+  if (record.length > 0) {
+    const attempts = (record[0].sync_attempts || 0) + 1;
+    await updateData(db, 'pending_sync', {
+      id: recordId,
+      sync_attempts: attempts
+    });
+  }
 }
 
 export async function initDatabase() {
