@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useState } from 'react';
+import { View, ActivityIndicator } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -8,89 +8,107 @@ import Icon from 'react-native-vector-icons/FontAwesome';
 import LoginScreen from './LoginScreen';
 import Payments from './payments/Payments';
 import CrearCliente from './createClient/CrearCliente';
-/* import CreateClient from './clients/CreateClient';
-import Movements from './movements/Movements';
-import Caja from './caja/Caja';
-import AbrirCaja from './caja/AbrirCaja';
-import NuevoCliente from './clients/NuevoCliente';
-import Facturas from './facturas/Facturas'; */
+import CajaScreen from './caja/Caja';
+import MovementsScreen from './movements/Movements';
+import { useAuth } from '../context/AuthContext';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
-// Mapeo de rutas a componentes
+export const menuConfig = {
+  vendedor: [
+    { key: 'payments', title: 'Pagos', route: 'Payments', icon: 'money', permissions: ['vendedor', 'admin'] },
+    { key: 'create_sale', title: 'Nueva Venta', route: 'CreateClient', icon: 'user-plus', permissions: ['vendedor', 'admin'] },
+    { key: 'movements', title: 'Movimientos', route: 'Movements', icon: 'exchange', permissions: ['vendedor', 'admin'] },
+    { key: 'caja', title: 'Caja', route: 'Caja', icon: 'shopping-cart', permissions: ['vendedor', 'admin'] },
+  ],
+  admin: [
+    { key: 'payments', title: 'Pagos', route: 'Payments', icon: 'money', permissions: ['admin', 'vendedor'] },
+    { key: 'create_sale', title: 'Nueva Venta', route: 'CreateClient', icon: 'user-plus', permissions: ['admin', 'vendedor'] },
+    { key: 'movements', title: 'Movimientos', route: 'Movements', icon: 'exchange', permissions: ['admin', 'vendedor'] },
+    { key: 'caja', title: 'Caja', route: 'Caja', icon: 'shopping-cart', permissions: ['admin', 'vendedor'] },
+  ],
+  cliente: [
+    { key: 'payments', title: 'Mis Pagos', route: 'Payments', icon: 'money', permissions: ['cliente'] },
+    { key: 'caja', title: 'Estado', route: 'Caja', icon: 'shopping-cart', permissions: ['cliente'] },
+  ],
+};
+
 const routeComponents = {
   CreateClient: CrearCliente,
   Payments: Payments,
-  /* AbrirCaja: AbrirCaja,
-  Movements: Movements,
-  Caja: Caja,
-  NuevoCliente: NuevoCliente,
-  Facturas: Facturas, */
+  Movements: MovementsScreen,
+  Caja: CajaScreen,
 };
 
-const menuOptions = {
-  seller: [
-    { title: 'Pagos', route: 'Payments', icon: 'money' }, 
-    { title: 'Crear Cliente', route: 'CreateClient', icon: 'user-plus' },
-    { title: 'Movimientos', route: 'Movements', icon: 'exchange' },
-    { title: 'Caja', route: 'Caja', icon: 'shopping-cart' },
-  ],
-  admin: [
-    { title: 'Abrir Caja', route: 'AbrirCaja', icon: 'unlock' },
-    { title: 'Registrar Cliente', route: 'NuevoCliente', icon: 'user-plus' },
-    { title: 'Ver Facturas', route: 'Facturas', icon: 'file-text' },
-  ],
-};
-
-function MainTabs(route) {
-  const { user } = route.route.params;
-  console.log('Usuario:', user);
-  
-  const [perfil, setPerfil] = useState('seller');
+function MainTabs() {
+  const { rol } = useAuth();
+  const perfil = rol || 'vendedor';
+  const options = menuConfig[perfil] || menuConfig.vendedor;
 
   return (
     <Tab.Navigator
       screenOptions={{
         tabBarStyle: {
-          backgroundColor: '#fff',
+          backgroundColor: '#FFFFFF',
           borderTopWidth: 1,
-          borderColor: '#ccc',
-          paddingVertical: 10,
+          borderTopColor: '#E8EAED',
+          height: 64,
+          paddingTop: 6,
+          paddingBottom: 8,
         },
-        tabBarLabelStyle: {
-          fontSize: 12,
-        },
-        tabBarActiveTintColor: '#007bff',
-        tabBarInactiveTintColor: '#666',
+        tabBarLabelStyle: { fontSize: 11, fontWeight: '600', letterSpacing: 0.1, marginTop: 2 },
+        tabBarActiveTintColor: '#007AFF',
+        tabBarInactiveTintColor: '#8E8E93',
+        tabBarItemStyle: { justifyContent: 'center', alignItems: 'center' },
         headerShown: false,
       }}
     >
-      {menuOptions[perfil]?.map((item, index) => (
+      {options.map(item => (
         <Tab.Screen
-          key={index}
+          key={item.route}
           name={item.route}
-          component={routeComponents[item.route] || CrearCliente}
+          component={routeComponents[item.route]}
           options={{
-            tabBarIcon: ({ color }) => (
-              <Icon name={item.icon} size={24} color={color} />
+            tabBarIcon: ({ color, focused }) => (
+              <View style={{ alignItems: 'center', justifyContent: 'center', width: 36, height: 28 }}>
+                <Icon name={item.icon} size={22} color={color} />
+              </View>
             ),
             tabBarLabel: item.title,
           }}
-          initialParams={{ user }} // Pasar el usuario como parámetro
         />
       ))}
     </Tab.Navigator>
   );
 }
 
+function RootNavigator() {
+  const { session, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color="#007bff" />
+      </View>
+    );
+  }
+
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      {session ? (
+        <Stack.Screen name="Main" component={MainTabs} />
+      ) : (
+        <Stack.Screen name="Login" component={LoginScreen} />
+      )}
+    </Stack.Navigator>
+  );
+}
+
 export default function Navigation() {
   return (
     <NavigationContainer>
-      <Stack.Navigator initialRouteName="Login" screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="Login" component={LoginScreen} />
-        <Stack.Screen name="Main" component={MainTabs} />
-      </Stack.Navigator>
+      <RootNavigator />
     </NavigationContainer>
   );
 } 

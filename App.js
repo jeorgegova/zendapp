@@ -7,7 +7,14 @@
 
 import * as React from 'react';
 import Navigation from './src/screens/Navigation';
+import { AuthProvider } from './src/context/AuthContext';
+import Toast from 'react-native-toast-message';
 
 export default function App() {
-  return <Navigation />;
+  return (
+    <AuthProvider>
+      <Navigation />
+      <Toast />
+    </AuthProvider>
+  );
 } 

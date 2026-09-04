@@ -2,14 +2,19 @@ import { updateData, insertOrReplaceData, getDbConnection, getData, insertTables
 import { supabase } from "../lib/supabase";
 
 export const AuthService = async (db, email, password) => {
+  console.log('Ingresa al AuthService');
+
   try {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    console.log('Data login', data);
+    console.log('Error login', error);
+
 
     if (error) {
       return { success: false, message: error.message || 'Usuario o contraseña incorrectos' };
     }
     console.log('Hay Session,', data);
-    
+
 
     const { access_token } = data.session;
     const userId = data.user.id;

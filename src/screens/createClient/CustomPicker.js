@@ -87,87 +87,21 @@ const CustomPicker = ({ data, selectedValue, onSelect, placeholder, visible, onC
   }
 
 const styles = StyleSheet.create({
-      modalOverlay: {
-        flex: 1,
-        backgroundColor: "rgba(0, 0, 0, 0.5)",
-        justifyContent: "center",
-      },
-      modalContent: {
-        backgroundColor: "#fff",
-        borderRadius: 20,
-        height: "70%",
-        marginHorizontal: 16,
-      },
-      modalHeader: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-        padding: 16,
-        borderBottomWidth: 1,
-        borderBottomColor: "#e0e0e0",
-      },
-      modalTitle: {
-        fontSize: 18,
-        fontWeight: "600",
-        color: "#333",
-      },
-      modalItem: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-        padding: 16,
-      },
-      modalItemSelected: {
-        backgroundColor: "#e3f2fd",
-      },
-      modalItemText: {
-        fontSize: 16,
-        color: "#333",
-      },
-      modalItemTextSelected: {
-        color: "#2196F3",
-        fontWeight: "500",
-      },
-      searchContainer: {
-        flexDirection: "row",
-        alignItems: "center",
-        backgroundColor: "#f5f5f5",
-        marginBottom: 8,
-        paddingHorizontal: 12,
-        borderWidth: 1,
-        borderColor: "#e0e0e0",
-      },
-      searchIcon: {
-        marginRight: 8,
-      },
-      searchInput: {
-        flex: 1,
-        height: 40,
-        fontSize: 16,
-        color: "#333",
-      },
-      clearButton: {
-        padding: 4,
-        marginLeft: 8,
-      },
-      emptyContainer: {
-        alignItems: "center",
-        justifyContent: "center",
-        paddingVertical: 40,
-        paddingHorizontal: 20,
-      },
-      emptyText: {
-        fontSize: 16,
-        color: "#666",
-        marginTop: 12,
-        fontWeight: "500",
-      },
-      emptySubText: {
-        fontSize: 14,
-        color: "#999",
-        marginTop: 4,
-        textAlign: "center",
-      },
+      modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.35)", justifyContent: "flex-end" },
+      modalContent: { backgroundColor: "#fff", borderTopLeftRadius: 28, borderTopRightRadius: 28, height: "72%", paddingBottom: 16 },
+      modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 16, borderBottomWidth: 0.5, borderColor: "#E5E5EA" },
+      modalTitle: { fontSize: 17, fontWeight: "700", color: "#1D1D1F" },
+      modalItem: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 16, marginHorizontal: 8, borderRadius: 12 },
+      modalItemSelected: { backgroundColor: "#E8F0FE" },
+      modalItemText: { fontSize: 16, color: "#1D1D1F" },
+      modalItemTextSelected: { color: "#007AFF", fontWeight: "600" },
+      searchContainer: { flexDirection: "row", alignItems: "center", backgroundColor: "#F2F2F7", margin: 12, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1, borderColor: "#E5E5EA" },
+      searchIcon: { marginRight: 8 },
+      searchInput: { flex: 1, height: 40, fontSize: 15, color: "#1D1D1F" },
+      clearButton: { padding: 4, marginLeft: 8 },
+      emptyContainer: { alignItems: "center", justifyContent: "center", paddingVertical: 40, paddingHorizontal: 20 },
+      emptyText: { fontSize: 16, color: "#6E6E73", marginTop: 12, fontWeight: "600" },
+      emptySubText: { fontSize: 13, color: "#8E8E93", marginTop: 4, textAlign: "center" },
 });
 
 export default CustomPicker;
