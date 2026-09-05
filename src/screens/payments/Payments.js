@@ -6,39 +6,42 @@ import { getData, getDbConnection } from '../../database/db';
 import { FormatMoneyDecimales } from '../../utils/utilities';
 import { apple } from '../../theme/appleTheme';
 
-const StatsCard = ({ pending, processed, pendingAmount, collected, progress }) => (
-  <View style={styles.statsCard}>
-    <View style={styles.statsRow}>
-      <View style={styles.statBox}>
-        <Text style={styles.statLabel}>VISITAS</Text>
-        <Text style={styles.statValue}>{processed}<Text style={styles.statMuted}> / {pending}</Text></Text>
-        <View style={styles.progressMini}><View style={[styles.progressFill, { width: `${progress}%` }]} /></View>
-      </View>
-      <View style={styles.vSep} />
-      <View style={styles.statBox}>
-        <Text style={styles.statLabel}>RECAUDO</Text>
-        <Text style={styles.statValue} numberOfLines={1}>{FormatMoneyDecimales(collected)}<Text style={styles.statMuted}> / {FormatMoneyDecimales(pendingAmount)}</Text></Text>
-        <Text style={styles.statCaption}>{progress}% completado</Text>
-      </View>
-    </View>
-  </View>
-);
+
 
 const mapPaymentType = (id) => ({ 1: 'MENSUAL', 2: 'SEMANAL', 3: 'QUINCENAL' }[id] || '—');
-const normalizeClient = (item) => ({
-  id: item.id, name: (item.name?.trim() || 'Sin nombre'), address: (item.address?.trim() || 'Sin dirección'),
-  amount: Number(item.amount) || 0, status: (item.status || '').toUpperCase().trim(),
-  estadoPago: (item.estadoPago || '').toLowerCase().trim(), estadoMovil: (item.status || '').toLowerCase().trim(),
-  paymentType: mapPaymentType(item.paymentType), time: item.time || '—', saldo: Number(item.saldo) || 0,
-  cuotasPagas: Number(item.cuotasPagas) || 0, saldoVencido: Number(item.saldoVencido) || 0,
-  nombreUno: item.nombreUno?.trim() || '', apellidoUno: item.apellidoUno?.trim() || '',
-});
+const normalizeClient = (item, clientsByDoc = {}) => {
+  // telefono viene de clients.telefono via facturas.celular (denormalizado) o join fallback
+  const telFromRow = (item.telefono || item.celular || '').trim();
+  const telFromClients = item.documento ? (clientsByDoc[item.documento] || '') : '';
+  return {
+    id: item.id, name: (item.name?.trim() || 'Sin nombre'), address: (item.address?.trim() || 'Sin dirección'),
+    amount: Number(item.amount) || 0, status: (item.status || '').toUpperCase().trim(),
+    estadoPago: (item.estadoPago || '').toLowerCase().trim(), estadoMovil: (item.status || '').toLowerCase().trim(),
+    paymentType: mapPaymentType(item.paymentType), time: item.time || '—', saldo: Number(item.saldo) || 0,
+    cuotasPagas: Number(item.cuotasPagas) || 0, saldoVencido: Number(item.saldoVencido) || 0,
+    nombreUno: item.nombreUno?.trim() || '', apellidoUno: item.apellidoUno?.trim() || '',
+    telefono: (telFromRow || telFromClients).trim(),
+    latitud: item.latitud != null && item.latitud !== '' ? Number(item.latitud) : null,
+    longitud: item.longitud != null && item.longitud !== '' ? Number(item.longitud) : null,
+    documento: (item.documento || '').trim(),
+  };
+};
 
 const loadClientsFromDB = async () => {
   const db = await getDbConnection();
-  const data = await getData(db, `SELECT id, nombreUno || ' ' || COALESCE(apellidoUno, '') AS name, direccion AS address, valorCuota AS amount, estadoMovil AS status, estado AS estadoPago, paymentTermId AS paymentType, strftime('%H:%M', fecha) AS time, saldo, cuotasPagas, saldoVencido, nombreUno, apellidoUno FROM facturas WHERE estadoMovil IS NOT NULL`);
-  return data.map(normalizeClient);
+  // Incluir saldo>0 + pagos de hoy con saldo 0 (actualizado hoy)
+  const data = await getData(
+    db,
+    `SELECT id, nombreUno || ' ' || COALESCE(apellidoUno, '') AS name, direccion AS address, valorCuota AS amount, estadoMovil AS status, estado AS estadoPago, paymentTermId AS paymentType, strftime('%H:%M', fecha) AS time, saldo, cuotasPagas, saldoVencido, nombreUno, apellidoUno, celular, documento, latitud, longitud FROM facturas WHERE estadoMovil IS NOT NULL AND (saldo > 0 OR id IN (SELECT idFactura FROM pagos WHERE date(substr(horaDispositivo,1,10)) = date('now','localtime')))`
+  );
+  let clientsByDoc = {};
+  try {
+    const clientsRows = await getData(db, `SELECT documento, telefono FROM clients`);
+    if (clientsRows) for (const c of clientsRows) if (c.documento) clientsByDoc[c.documento] = c.telefono || '';
+  } catch {}
+  return data.map(i => normalizeClient(i, clientsByDoc));
 };
+
 const calculateStats = async (clients) => {
   const db = await getDbConnection();
   const pagos = await getData(db, `SELECT SUM(valor) as total FROM detallesCaja WHERE tipo = 'pago'`);
@@ -64,7 +67,7 @@ export default function Payments() {
 
   const handleTabChange = (pending) => {
     if (showPending === pending) return;
-    
+
     // Animar indicador segmentado
     Animated.spring(slideAnim, {
       toValue: pending ? 0 : 1,
@@ -191,7 +194,7 @@ export default function Payments() {
             data={filteredClients}
             keyExtractor={i => i.id.toString()}
             renderItem={({ item }) => (
-              <ItemPayments id={item.id} name={item.name} address={item.address} amount={item.amount} status={item.status} time={item.time} paymentType={item.paymentType} estadoPago={item.estadoPago} saldo={item.saldo} cuotasPagas={item.cuotasPagas} saldoVencido={item.saldoVencido} nombreUno={item.nombreUno} apellidoUno={item.apellidoUno} valorCuota={item.amount} estadoMovil={item.estadoMovil} onPaymentSuccess={loadClients} />
+              <ItemPayments id={item.id} name={item.name} address={item.address} amount={item.amount} status={item.status} time={item.time} paymentType={item.paymentType} estadoPago={item.estadoPago} saldo={item.saldo} cuotasPagas={item.cuotasPagas} saldoVencido={item.saldoVencido} nombreUno={item.nombreUno} apellidoUno={item.apellidoUno} valorCuota={item.amount} estadoMovil={item.estadoMovil} telefono={item.telefono} latitud={item.latitud} longitud={item.longitud} onPaymentSuccess={loadClients} />
             )}
             ListEmptyComponent={
               <View style={styles.empty}>

@@ -58,6 +58,12 @@ export const apple = {
     caption1: { fontSize: 12, fontWeight: '400', letterSpacing: 0, color: '#8E8E93' },
     caption2: { fontSize: 11, fontWeight: '400', letterSpacing: 0.06, color: '#8E8E93' },
   },
+  shadow: {
+    card: { ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 6 }, android: { elevation: 1.5 }, default: { elevation: 1 } }) },
+    subtle: { ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 0.5 }, shadowOpacity: 0.04, shadowRadius: 2 }, android: { elevation: 0.8 }, default: { elevation: 1 } }) },
+    elevated: { ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.10, shadowRadius: 16 }, android: { elevation: 6 }, default: { elevation: 4 } }) },
+    tab: { ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: -0.5 }, shadowOpacity: 0.04, shadowRadius: 3 }, android: { elevation: 8 }, default: { elevation: 4 } }) },
+  },
   border: {
     hairline: 0.5,
     card: { borderWidth: 0.5, borderColor: '#E5E5EA' },

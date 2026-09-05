@@ -10,6 +10,7 @@ import Payments from './payments/Payments';
 import CrearCliente from './createClient/CrearCliente';
 import CajaScreen from './caja/Caja';
 import MovementsScreen from './movements/Movements';
+import CreditDetail from './creditDetail/CreditDetail';
 import { useAuth } from '../context/AuthContext';
 
 const Stack = createNativeStackNavigator();
@@ -97,7 +98,10 @@ function RootNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       {session ? (
-        <Stack.Screen name="Main" component={MainTabs} />
+        <>
+          <Stack.Screen name="Main" component={MainTabs} />
+          <Stack.Screen name="CreditDetail" component={CreditDetail} options={{ headerShown: false }} />
+        </>
       ) : (
         <Stack.Screen name="Login" component={LoginScreen} />
       )}
