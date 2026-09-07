@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform, SafeAreaView, Alert, Animated } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { BackHandler, View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform, SafeAreaView, Alert, Animated } from 'react-native';
+import { useNavigation } from '@react-navigation/native'
+import { useFocusEffect } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import { getData, getDbConnection } from '../../database/db';
 import CustomPicker from './CustomPicker';
@@ -24,6 +25,24 @@ const CrearCliente = () => {
     Animated.timing(fade, { toValue: 1, duration: 400, useNativeDriver: true }).start();
     LoadData();
   }, []);
+  useFocusEffect(
+    React.useCallback(() => {
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        navigation.navigate('Payments');
+        return true;
+      });
+      const beforeRemove = navigation.addListener('beforeRemove', (e) => {
+        if (e.data.action.type === 'GO_BACK') {
+          e.preventDefault();
+          navigation.navigate('Payments');
+        }
+      });
+      return () => {
+        sub.remove();
+        beforeRemove();
+      };
+    }, [navigation])
+  );
 
   useEffect(() => {
     const isValid = Object.values(formData).every(v => v.trim() !== '');

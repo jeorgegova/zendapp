@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, ActivityIndicator, Alert, SafeAreaView, Modal, ScrollView } from 'react-native';
+import { BackHandler, View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, ActivityIndicator, Alert, SafeAreaView, Modal, ScrollView } from 'react-native';
 import Icon from 'react-native-vector-icons/FontAwesome';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { getCajaActual } from '../../services/cajaService';
 import { createCashMovement, listMovimientos, getCurrentLocationOrNull } from '../../services/movementsService';
 import { FormatMoneyDecimales } from '../../utils/utilities';
@@ -28,6 +28,26 @@ export default function MovementsScreen() {
     } catch (e) { Alert.alert('Error', e.message); } finally { setLoading(false); }
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
+  const navigation = useNavigation();
+  useFocusEffect(
+    React.useCallback(() => {
+      const onBack = () => {
+        navigation.navigate('Payments');
+        return true;
+      };
+      const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
+      const beforeRemove = navigation.addListener('beforeRemove', (e) => {
+        if (e.data.action.type === 'GO_BACK') {
+          e.preventDefault();
+          navigation.navigate('Payments');
+        }
+      });
+      return () => {
+        sub.remove();
+        beforeRemove();
+      };
+    }, [navigation])
+  );
 
   const handleSearch = async () => {
     try { setItems((await listMovimientos({ cajaId: caja?.id || null, limit: 50, offset: 0, search })) || []); } catch (e) { Alert.alert('Error', e.message); }

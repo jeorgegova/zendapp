@@ -31,16 +31,18 @@ const getAndIncrementConsecutivo = async (db) => {
 };
 const updateFacturaWithConsecutivo = async (db, id, updates, c) => updateData(db, 'facturas', { ...updates, id, consecutivoTramitado: c });
 const getUltimoTramite = async (db, idFactura) => {
-  const r = await getData(db, `SELECT tipo, valor FROM pagos WHERE idFactura = '${idFactura}' ORDER BY id DESC LIMIT 1`);
-  if (!r.length) return { tipo: null, valorPagado: 0 };
+  const r = await getData(db, `SELECT id, tipo, valor, estadoMovil FROM pagos WHERE idFactura = '${idFactura}' ORDER BY id DESC LIMIT 1`);
+  if (!r.length) return { tipo: null, valorPagado: 0, syncId: null, pendiente: false };
   const v = Number(r[0].valor) || 0;
-  if (r[0].tipo === 'nopago') return { tipo: 'NO PAGO', valorPagado: v };
-  if (r[0].tipo === 'parcial') return { tipo: 'PARCIAL', valorPagado: v };
-  if (r[0].tipo === 'pago') return { tipo: v === 0 ? 'NO PAGO' : 'PAGO', valorPagado: v };
-  return { tipo: 'DESCONOCIDO', valorPagado: v };
+  const syncId = r[0].id;
+  const pendiente = r[0].estadoMovil !== 'sincronizado' && Number(syncId) < 0;
+  if (r[0].tipo === 'nopago') return { tipo: 'NO PAGO', valorPagado: v, syncId, pendiente };
+  if (r[0].tipo === 'parcial') return { tipo: 'PARCIAL', valorPagado: v, syncId, pendiente };
+  if (r[0].tipo === 'pago') return { tipo: v === 0 ? 'NO PAGO' : 'PAGO', valorPagado: v, syncId, pendiente };
+  return { tipo: 'DESCONOCIDO', valorPagado: v, syncId, pendiente };
 };
 
-const ItemPayments = memo(({ id, name, address, amount, status, paymentType, estadoPago, saldo, cuotasPagas, saldoVencido, nombreUno, valorCuota, onPaymentSuccess, estadoMovil, telefono, latitud, longitud }) => {
+const ItemPayments = memo(({ id, name, address, amount, status, paymentType, estadoPago, saldo, cuotasPagas, saldoVencido, nombreUno, valorCuota, onPaymentSuccess, estadoMovil, telefono, latitud, longitud, valorCredito }) => {
   const navigation = useNavigation();
   const [modalParcial, setModalParcial] = useState(false);
   const [modalNoPago, setModalNoPago] = useState(false);
@@ -48,12 +50,13 @@ const ItemPayments = memo(({ id, name, address, amount, status, paymentType, est
   const [loading, setLoading] = useState(false);
   const [tipoTramitado, setTipoTramitado] = useState(null);
   const [valorPagado, setValorPagado] = useState(0);
+  const [pendienteSync, setPendienteSync] = useState(false);
   const scale = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     if (estadoMovil === 'actualizado') (async () => {
-      try { const db = await getDbConnection(); const { tipo, valorPagado } = await getUltimoTramite(db, id); setTipoTramitado(tipo); setValorPagado(valorPagado); } catch {}
-    })(); else { setTipoTramitado(null); setValorPagado(0); }
+      try { const db = await getDbConnection(); const { tipo, valorPagado, pendiente } = await getUltimoTramite(db, id); setTipoTramitado(tipo); setValorPagado(valorPagado); setPendienteSync(!!pendiente); } catch {}
+    })(); else { setTipoTramitado(null); setValorPagado(0); setPendienteSync(false); }
   }, [estadoMovil, id]);
 
   const pressIn = () => Animated.spring(scale, { toValue: 0.98, useNativeDriver: true, speed: 30 }).start();
@@ -79,6 +82,7 @@ const ItemPayments = memo(({ id, name, address, amount, status, paymentType, est
   const textoChip = estadoMovil === 'actualizado' && tipoTramitado ? tipoTramitado : paymentType;
   const valorAMostrar = estadoMovil === 'actualizado' ? valorPagado : amount;
   const isPending = status === 'PENDIENTE';
+  const amountColor = !isPending && tipoTramitado ? (tipoTramitado === 'NO PAGO' ? apple.colors.danger : tipoTramitado === 'PARCIAL' ? apple.colors.warning : apple.colors.success) : apple.colors.success;
   const handlePressCard = () => {
     navigation.navigate('CreditDetail', { invoiceId: id, clientName: name, address, telefono, latitud, longitud, saldo });
   };
@@ -124,8 +128,22 @@ const ItemPayments = memo(({ id, name, address, amount, status, paymentType, est
           {/* Fila 2: Cuota / Valor + Saldo en línea */}
           <View style={styles.infoRow}>
             <View style={styles.amountBox}>
-              <Text style={styles.amountLabel}>CUOTA</Text>
-              <Text style={styles.amount}>{FormatMoneyDecimales(valorAMostrar)}</Text>
+              <Text style={styles.amountLabel}>{!isPending && tipoTramitado ? 'VALOR PAGO' : 'CUOTA'}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Text style={[styles.amount, { color: amountColor }]}>{FormatMoneyDecimales(valorAMostrar)}</Text>
+                {!isPending && tipoTramitado && (
+                  <View style={styles.syncBadge}>
+                    {pendienteSync ? (
+                      <Icon name="check" size={10} color={apple.colors.tertiaryLabel} />
+                    ) : (
+                      <View style={{ flexDirection: 'row', marginLeft: -2 }}>
+                        <Icon name="check" size={10} color={apple.colors.blue} />
+                        <Icon name="check" size={10} color={apple.colors.blue} style={{ marginLeft: -4 }} />
+                      </View>
+                    )}
+                  </View>
+                )}
+              </View>
             </View>
             <View style={styles.saldoBox}>
               <Text style={styles.saldoLabel}>SALDO PENDIENTE</Text>
@@ -135,8 +153,8 @@ const ItemPayments = memo(({ id, name, address, amount, status, paymentType, est
 
 
 
-          {/* Fila 3: Botones de acción */}
-          {isPending && (
+          {/* Fila 3: Botones o Info tramitado */}
+          {isPending ? (
             <View style={styles.actions}>
               <TouchableOpacity style={[styles.actionBtn, styles.actionOutlineSuccess]} onPress={() => executePaymentAction('pago', Math.min(valorCuota, saldo))} disabled={loading}>
                 {loading ? <ActivityIndicator size="small" color={apple.colors.success} /> : <><Icon name="check" size={13} color={apple.colors.success} /><Text style={styles.actionTextSuccess}> Pagar</Text></>}
@@ -147,6 +165,23 @@ const ItemPayments = memo(({ id, name, address, amount, status, paymentType, est
               <TouchableOpacity style={[styles.actionBtn, styles.actionOutlineWarning]} onPress={() => setModalParcial(true)}>
                 <Icon name="adjust" size={13} color={apple.colors.warning} /><Text style={styles.actionTextWarning}> Parcial</Text>
               </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.tramitadoInfo}>
+              <View style={styles.tramitadoCol}>
+                <Text style={styles.tramitadoLabel}>VALOR CUOTA</Text>
+                <Text style={styles.tramitadoVal}>{FormatMoneyDecimales(valorCuota)}</Text>
+              </View>
+              <View style={styles.tramitadoSep} />
+              <View style={styles.tramitadoCol}>
+                <Text style={styles.tramitadoLabel}>VALOR CRÉDITO</Text>
+                <Text style={styles.tramitadoVal}>{FormatMoneyDecimales(valorCredito || amount)}</Text>
+              </View>
+              <View style={styles.tramitadoSep} />
+              <View style={styles.tramitadoCol}>
+                <Text style={styles.tramitadoLabel}>SALDO VENCIDO</Text>
+                <Text style={[styles.tramitadoVal, { color: Number(saldoVencido) > 0 ? apple.colors.danger : apple.colors.success }]}>{FormatMoneyDecimales(saldoVencido)}</Text>
+              </View>
             </View>
           )}
         </View>
@@ -211,7 +246,8 @@ const styles = StyleSheet.create({
   infoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#F8F9FB', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, marginTop: 8 },
   amountBox: { flexDirection: 'column' },
   amountLabel: { fontSize: 9, fontWeight: '700', color: apple.colors.secondaryLabel, letterSpacing: 0.3 },
-  amount: { fontSize: 16, fontWeight: '800', color: apple.colors.success, letterSpacing: -0.3 },
+  amount: { fontSize: 16, fontWeight: '800', letterSpacing: -0.3 },
+  syncBadge: { flexDirection: 'row', alignItems: 'center' },
   saldoBox: { flexDirection: 'column', alignItems: 'flex-end' },
   saldoLabel: { fontSize: 9, fontWeight: '700', color: apple.colors.tertiaryLabel, letterSpacing: 0.3 },
   saldo: { fontSize: 13, fontWeight: '700', color: apple.colors.label },
@@ -225,6 +261,11 @@ const styles = StyleSheet.create({
   actionTextDanger: { color: apple.colors.danger, fontWeight: '700', fontSize: 11 },
   actionTextWarning: { color: apple.colors.warning, fontWeight: '700', fontSize: 11 },
   actionTextCall: { color: apple.colors.blue, fontWeight: '700', fontSize: 11 },
+  tramitadoInfo: { flexDirection: 'row', backgroundColor: '#F8F9FB', borderRadius: 10, paddingVertical: 8, paddingHorizontal: 6, marginTop: 8, alignItems: 'center' },
+  tramitadoCol: { flex: 1, alignItems: 'center' },
+  tramitadoLabel: { fontSize: 9, fontWeight: '700', color: apple.colors.secondaryLabel, letterSpacing: 0.3 },
+  tramitadoVal: { fontSize: 12, fontWeight: '700', color: apple.colors.label, marginTop: 2 },
+  tramitadoSep: { width: 1, height: 24, backgroundColor: '#E8EAED' },
   sheet: { backgroundColor: apple.colors.card, borderRadius: 28, padding: 20 },
   handle: { width: 36, height: 5, borderRadius: 3, backgroundColor: apple.colors.separator, alignSelf: 'center', marginBottom: 16 },
   sheetTitle: { fontSize: 17, fontWeight: '700', color: apple.colors.label, textAlign: 'center' },

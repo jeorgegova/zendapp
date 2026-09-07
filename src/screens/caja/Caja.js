@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, FlatList, ActivityIndicator, TextInput, Alert, RefreshControl, SafeAreaView } from 'react-native';
+import { BackHandler, View, Text, StyleSheet, TouchableOpacity, FlatList, ActivityIndicator, TextInput, Alert, RefreshControl, SafeAreaView } from 'react-native';
 import Icon from 'react-native-vector-icons/FontAwesome';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { getCajaActual, abrirCaja, cerrarCaja, getMovimientosCaja, getHistorialCajas } from '../../services/cajaService';
 import { useAuth } from '../../context/AuthContext';
 import { FormatMoneyDecimales } from '../../utils/utilities';
@@ -29,6 +29,29 @@ export default function CajaScreen() {
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+  const navigation = useNavigation();
+  useFocusEffect(
+    React.useCallback(() => {
+      const onBack = () => {
+        if (navigation.canGoBack()) {
+          navigation.navigate('Payments');
+          return true;
+        }
+        return false;
+      };
+      const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
+      const beforeRemove = navigation.addListener('beforeRemove', (e) => {
+        if (e.data.action.type === 'GO_BACK') {
+          e.preventDefault();
+          navigation.navigate('Payments');
+        }
+      });
+      return () => {
+        sub.remove();
+        beforeRemove();
+      };
+    }, [navigation])
+  );
   const onRefresh = () => { setRefreshing(true); load(); };
 
   const handleAbrir = async () => {

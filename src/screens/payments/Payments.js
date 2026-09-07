@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, FlatList, TextInput, ActivityIndicator, TouchableOpacity, Animated } from 'react-native';
+import { View, Text, StyleSheet, SafeAreaView, FlatList, TextInput, ActivityIndicator, TouchableOpacity, Animated, BackHandler } from 'react-native';
+import { useFocusEffect, useNavigation, useNavigationState } from '@react-navigation/native';
+import Modal from 'react-native-modal';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import ItemPayments from './components/itemPayments';
 import { getData, getDbConnection } from '../../database/db';
@@ -10,7 +12,6 @@ import { apple } from '../../theme/appleTheme';
 
 const mapPaymentType = (id) => ({ 1: 'MENSUAL', 2: 'SEMANAL', 3: 'QUINCENAL' }[id] || '—');
 const normalizeClient = (item, clientsByDoc = {}) => {
-  // telefono viene de clients.telefono via facturas.celular (denormalizado) o join fallback
   const telFromRow = (item.telefono || item.celular || '').trim();
   const telFromClients = item.documento ? (clientsByDoc[item.documento] || '') : '';
   return {
@@ -24,15 +25,15 @@ const normalizeClient = (item, clientsByDoc = {}) => {
     latitud: item.latitud != null && item.latitud !== '' ? Number(item.latitud) : null,
     longitud: item.longitud != null && item.longitud !== '' ? Number(item.longitud) : null,
     documento: (item.documento || '').trim(),
+    valorCredito: Number(item.valorInicial || item.valorCredito || 0) || 0,
   };
 };
 
 const loadClientsFromDB = async () => {
   const db = await getDbConnection();
-  // Incluir saldo>0 + pagos de hoy con saldo 0 (actualizado hoy)
   const data = await getData(
     db,
-    `SELECT id, nombreUno || ' ' || COALESCE(apellidoUno, '') AS name, direccion AS address, valorCuota AS amount, estadoMovil AS status, estado AS estadoPago, paymentTermId AS paymentType, strftime('%H:%M', fecha) AS time, saldo, cuotasPagas, saldoVencido, nombreUno, apellidoUno, celular, documento, latitud, longitud FROM facturas WHERE estadoMovil IS NOT NULL AND (saldo > 0 OR id IN (SELECT idFactura FROM pagos WHERE date(substr(horaDispositivo,1,10)) = date('now','localtime')))`
+    `SELECT id, nombreUno || ' ' || COALESCE(apellidoUno, '') AS name, direccion AS address, valorCuota AS amount, estadoMovil AS status, estado AS estadoPago, paymentTermId AS paymentType, strftime('%H:%M', fecha) AS time, saldo, cuotasPagas, saldoVencido, nombreUno, apellidoUno, celular, documento, latitud, longitud, valorInicial FROM facturas WHERE estadoMovil IS NOT NULL AND (saldo > 0 OR id IN (SELECT idFactura FROM pagos WHERE date(substr(horaDispositivo,1,10)) = date('now','localtime')))`
   );
   let clientsByDoc = {};
   try {
@@ -54,11 +55,15 @@ const calculateStats = async (clients) => {
 };
 
 export default function Payments() {
+  const navigation = useNavigation();
+  const { signOut } = require('../../context/AuthContext').useAuth();
   const [showPending, setShowPending] = useState(true);
   const [searchText, setSearchText] = useState('');
   const [clients, setClients] = useState([]);
   const [stats, setStats] = useState({ pending: 0, processed: 0, pendingAmount: 0, collected: 0, progress: 0 });
   const [loading, setLoading] = useState(true);
+  const [showLogout, setShowLogout] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   // Animaciones de traslación
   const slideAnim = useRef(new Animated.Value(0)).current; // 0 = pendiente, 1 = tramitados
@@ -109,6 +114,27 @@ export default function Payments() {
     inputRange: [0, 1],
     outputRange: ['0%', '50%'],
   });
+
+  const handleLogout = async () => {
+    setLoggingOut(true);
+    try { await signOut(); } catch {} finally { setLoggingOut(false); setShowLogout(false); }
+  };
+
+  useFocusEffect(useCallback(() => {
+    const onBack = () => {
+      if (showLogout) { setShowLogout(false); return true; }
+      setShowLogout(true);
+      return true;
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
+    const beforeRemove = navigation.addListener('beforeRemove', (e) => {
+      if (e.data.action.type === 'GO_BACK' && !showLogout) {
+        e.preventDefault();
+        setShowLogout(true);
+      }
+    });
+    return () => { sub.remove(); beforeRemove(); };
+  }, [navigation, showLogout, signOut]));
 
   return (
     <SafeAreaView style={styles.root}>
@@ -194,7 +220,7 @@ export default function Payments() {
             data={filteredClients}
             keyExtractor={i => i.id.toString()}
             renderItem={({ item }) => (
-              <ItemPayments id={item.id} name={item.name} address={item.address} amount={item.amount} status={item.status} time={item.time} paymentType={item.paymentType} estadoPago={item.estadoPago} saldo={item.saldo} cuotasPagas={item.cuotasPagas} saldoVencido={item.saldoVencido} nombreUno={item.nombreUno} apellidoUno={item.apellidoUno} valorCuota={item.amount} estadoMovil={item.estadoMovil} telefono={item.telefono} latitud={item.latitud} longitud={item.longitud} onPaymentSuccess={loadClients} />
+              <ItemPayments id={item.id} name={item.name} address={item.address} amount={item.amount} status={item.status} time={item.time} paymentType={item.paymentType} estadoPago={item.estadoPago} saldo={item.saldo} cuotasPagas={item.cuotasPagas} saldoVencido={item.saldoVencido} nombreUno={item.nombreUno} apellidoUno={item.apellidoUno} valorCuota={item.amount} estadoMovil={item.estadoMovil} telefono={item.telefono} latitud={item.latitud} longitud={item.longitud} valorCredito={item.valorCredito} onPaymentSuccess={loadClients} />
             )}
             ListEmptyComponent={
               <View style={styles.empty}>
@@ -206,6 +232,19 @@ export default function Payments() {
           />
         </Animated.View>
       )}
+
+      <Modal isVisible={showLogout} onBackdropPress={() => setShowLogout(false)} backdropOpacity={0.4} animationIn="slideInUp" animationOut="slideOutDown">
+        <View style={styles.logoutSheet}>
+          <View style={styles.logoutHandle} />
+          <View style={styles.logoutIcon}><Icon name="sign-out" size={22} color={apple.colors.danger} /></View>
+          <Text style={styles.logoutTitle}>¿Cerrar sesión?</Text>
+          <Text style={styles.logoutSub}>Saldrás de tu cuenta y volverás al inicio de sesión.</Text>
+          <View style={styles.logoutActions}>
+            <TouchableOpacity style={styles.logoutCancel} onPress={() => setShowLogout(false)}><Text style={styles.logoutCancelText}>Cancelar</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.logoutConfirm} onPress={handleLogout} disabled={loggingOut}>{loggingOut ? <ActivityIndicator color="#fff" /> : <Text style={styles.logoutConfirmText}>Cerrar sesión</Text>}</TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -251,4 +290,14 @@ const styles = StyleSheet.create({
   emptyIcon: { width: 48, height: 48, borderRadius: 24, backgroundColor: apple.colors.fill, borderWidth: 0.5, borderColor: apple.colors.separator, alignItems: 'center', justifyContent: 'center' },
   emptyTitle: { marginTop: 12, fontSize: 15, fontWeight: '600', color: apple.colors.label },
   emptySub: { marginTop: 4, fontSize: 13, color: apple.colors.tertiaryLabel, textAlign: 'center' },
+  logoutSheet: { backgroundColor: '#fff', borderRadius: 24, padding: 20, paddingBottom: 24 },
+  logoutHandle: { width: 36, height: 5, borderRadius: 3, backgroundColor: '#E5E5EA', alignSelf: 'center', marginBottom: 16 },
+  logoutIcon: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#FFEBEE', alignItems: 'center', justifyContent: 'center', alignSelf: 'center', marginBottom: 12, borderWidth: 1, borderColor: '#FFD4D4' },
+  logoutTitle: { fontSize: 17, fontWeight: '700', color: '#1D1D1F', textAlign: 'center' },
+  logoutSub: { fontSize: 13, color: '#8E8E93', textAlign: 'center', marginTop: 6, paddingHorizontal: 12 },
+  logoutActions: { flexDirection: 'row', gap: 10, marginTop: 18 },
+  logoutCancel: { flex: 1, height: 46, borderRadius: 12, backgroundColor: '#F2F2F7', alignItems: 'center', justifyContent: 'center', borderWidth: 0.5, borderColor: '#E5E5EA' },
+  logoutCancelText: { fontWeight: '600', color: '#1D1D1F' },
+  logoutConfirm: { flex: 1, height: 46, borderRadius: 12, backgroundColor: '#FF3B30', alignItems: 'center', justifyContent: 'center' },
+  logoutConfirmText: { fontWeight: '700', color: '#fff' },
 });
