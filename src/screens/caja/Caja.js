@@ -7,6 +7,7 @@ import { useAuth } from '../../context/AuthContext';
 import { FormatMoneyDecimales } from '../../utils/utilities';
 import { apple } from '../../theme/appleTheme';
 import { AppleButton } from '../../components/AppleButton';
+import { appAlert } from '../../components/AppAlert';
 
 export default function CajaScreen() {
   const { profile } = useAuth();
@@ -25,7 +26,7 @@ export default function CajaScreen() {
       setCaja(actual);
       setMovimientos(actual ? await getMovimientosCaja(actual.id, 50, 0) : []);
       setHistorial((await getHistorialCajas(20, 0)) || []);
-    } catch (e) { Alert.alert('Error', e.message); } finally { setLoading(false); setRefreshing(false); }
+    } catch (e) { appAlert('Error', e.message); } finally { setLoading(false); setRefreshing(false); }
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -53,15 +54,21 @@ export default function CajaScreen() {
     }, [navigation])
   );
   const onRefresh = () => { setRefreshing(true); load(); };
+  const handleClearPending = () =>
+    appAlert('Reiniciar', '¿Borrar solo pendientes que ya están arriba? Usa reinicio total si necesitas borrar todo.', [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Borrar pendientes', onPress: async () => { const { clearOnlyPendingSync } = require('../../utils/clearLocal'); await clearOnlyPendingSync(); appAlert('Hecho', 'Pendientes borrados'); load(); } },
+      { text: 'Borrar TODO', style: 'destructive', onPress: async () => { const { clearAllLocalData } = require('../../utils/clearLocal'); await clearAllLocalData(); appAlert('Hecho', 'Base reiniciada. Cierra y abre la app.'); } },
+    ]);
 
   const handleAbrir = async () => {
     const val = parseFloat(saldoInicial.replace(',', '.')) || 0;
-    if (val < 0) return Alert.alert('Error', 'Saldo inicial no puede ser negativo');
-    try { setLoading(true); await abrirCaja(val); await load(); Alert.alert('Éxito', 'Caja abierta'); } catch (e) { Alert.alert('Error', e.message); } finally { setLoading(false); }
+    if (val < 0) return appAlert('Error', 'Saldo inicial no puede ser negativo');
+    try { setLoading(true); await abrirCaja(val); await load(); appAlert('Éxito', 'Caja abierta'); } catch (e) { appAlert('Error', e.message); } finally { setLoading(false); }
   };
-  const handleCerrar = () => Alert.alert('Cerrar caja', '¿Confirmar cierre? Se calculará saldo final.', [
+  const handleCerrar = () => appAlert('Cerrar caja', '¿Confirmar cierre? Se calculará saldo final.', [
     { text: 'Cancelar', style: 'cancel' },
-    { text: 'Cerrar', style: 'destructive', onPress: async () => { try { setLoading(true); await cerrarCaja(caja.id); await load(); Alert.alert('Éxito', 'Caja cerrada'); } catch (e) { Alert.alert('Error', e.message); } finally { setLoading(false); } } },
+    { text: 'Cerrar', style: 'destructive', onPress: async () => { try { setLoading(true); await cerrarCaja(caja.id); await load(); appAlert('Éxito', 'Caja cerrada'); } catch (e) { appAlert('Error', e.message); } finally { setLoading(false); } } },
   ]);
 
   const Row = ({ item }) => {
@@ -94,6 +101,9 @@ export default function CajaScreen() {
           </TouchableOpacity>
         ))}
       </View>
+      <TouchableOpacity onPress={handleClearPending} style={{ marginHorizontal: 16, marginBottom: 8, borderWidth: 1, borderColor: '#FF3B30', borderRadius: 10, padding: 10, alignItems: 'center' }}>
+        <Text style={{ color: '#FF3B30', fontWeight: '700', fontSize: 12 }}><Icon name="trash" size={12} color="#FF3B30" /> Reiniciar / Borrar pendientes</Text>
+      </TouchableOpacity>
 
       {tab === 'actual' ? (
         !caja ? (

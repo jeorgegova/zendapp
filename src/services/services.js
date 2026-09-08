@@ -51,10 +51,20 @@ export const AuthService = async (db, email, password) => {
     ]);
 
     await Promise.all([
-      insertOrReplaceData(db, 'concepts', concepts),
-      insertOrReplaceData(db, 'cajas', [caja]),
-      insertOrReplaceData(db, 'movimientos', movimientos)
+      concepts && concepts.length ? insertOrReplaceData(db, 'concepts', concepts) : Promise.resolve(),
+      caja ? insertOrReplaceData(db, 'cajas', [caja]) : Promise.resolve(),
+      movimientos && movimientos.length ? insertOrReplaceData(db, 'movimientos', movimientos) : Promise.resolve(),
     ]);
+
+    // Auto-crear caja del día con saldo_final anterior como saldo_inicial
+    try {
+      const { data: abierta } = await supabase.from('cajas').select('id').eq('usuario_id', userId).eq('estado', 'abierta').maybeSingle();
+      if (!abierta) {
+        const { data: ultima } = await supabase.from('cajas').select('saldo_final').eq('usuario_id', userId).order('fecha_cierre', { ascending: false }).limit(1).maybeSingle();
+        const saldoInicial = ultima?.saldo_final ?? 0;
+        await supabase.from('cajas').insert([{ usuario_id: userId, saldo_inicial: saldoInicial, estado: 'abierta', fecha_apertura: new Date().toISOString() }]);
+      }
+    } catch (e) { console.log('auto caja', e); }
 
     const invoices = await getInvoice(userId, access_token);
 

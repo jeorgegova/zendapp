@@ -7,6 +7,7 @@ import { getData, getDbConnection } from '../../database/db';
 import CustomPicker from './CustomPicker';
 import { apple } from '../../theme/appleTheme';
 import { AppleButton } from '../../components/AppleButton';
+import { appAlert } from '../../components/AppAlert';
 
 const CrearCliente = () => {
   const navigation = useNavigation();
@@ -76,10 +77,10 @@ const CrearCliente = () => {
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Error desconocido');
-      Alert.alert('Éxito', `Factura creada: ${result.id_factura}`);
+      appAlert('Éxito', `Factura creada: ${result.id_factura}`);
       setFormData({ nombre: '', apellido: '', alias: '', direccion: '', telefono: '', genero: '', documento: '', valor: '', plazo: '', interes: '' });
       setFormDataLabels({ plazo: '', interes: '' });
-    } catch (err) { Alert.alert('Error', err.message); } finally { setSaving(false); }
+    } catch (err) { appAlert('Error', err.message); } finally { setSaving(false); }
   };
 
   const Field = ({ label, value, field, placeholder, keyboardType, icon }) => (

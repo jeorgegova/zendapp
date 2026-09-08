@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabase';
 import { FormatMoneyDecimales } from '../../utils/utilities';
 import { apple } from '../../theme/appleTheme';
 import { AppleCard } from '../../components/AppleCard';
+import { appAlert } from '../../components/AppAlert';
 
 function StatusBadge({ estado }) {
   const map = {
@@ -39,7 +40,7 @@ export default function CreditDetail({ route, navigation }) {
       setPagos(ps || []);
     } catch (e) {
       console.error(e);
-      Alert.alert('Error', 'No se pudo cargar el detalle');
+      appAlert('Error', 'No se pudo cargar el detalle');
     } finally { setLoading(false); }
   }, [invoiceId]);
 
@@ -47,7 +48,7 @@ export default function CreditDetail({ route, navigation }) {
 
   const hasCoords = latitud != null && longitud != null && Number(latitud) !== 0 && Number(longitud) !== 0;
   const openMap = () => {
-    if (!hasCoords) return Alert.alert('Sin ubicación', 'No hay coordenadas de venta');
+    if (!hasCoords) return appAlert('Sin ubicación', 'No hay coordenadas de venta');
     const lat = Number(latitud), lng = Number(longitud);
     const url = Platform.select({ ios: `http://maps.apple.com/?q=${lat},${lng}`, android: `geo:${lat},${lng}?q=${lat},${lng}` });
     Linking.openURL(url).catch(() => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`));

@@ -3,6 +3,7 @@ import { getDbConnection, getData, updateData } from '../database/db';
 import { supabase } from '../lib/supabase';
 import { Alert } from 'react-native';
 import Toast from 'react-native-toast-message';
+import { appAlert } from '../components/AppAlert';
 
 let globalSyncCollection = [];
 let idCounter = -1;

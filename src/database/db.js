@@ -73,44 +73,42 @@ export async function paginatedQuery(db, baseSql, { limit = 20, offset = 0, para
 }
 
 export async function insertOrReplaceDataCaja(db, table, data) {
+  if (!Array.isArray(data) || data.length === 0 || !data[0]) {
+    console.warn(`insertOrReplaceDataCaja ${table}: vacío, skip`);
+    return null;
+  }
   const campos = Object.keys(data[0]);
   const strcampos = campos.toString();
   let scriptInsert = `INSERT OR REPLACE INTO ${table} (${strcampos})`;
   let scriptValues = " VALUES ";
-  
   for (let index = 0; index < data.length; index++) {
-  const element = data[index];
-  const _item = Object.values(element);
-  scriptValues += "(";
-  for (let index_value = 0; index_value < _item.length; index_value++) {
-  scriptValues += _item[index_value] === null || _item[index_value] === undefined ? "NULL" : `'${_item[index_value]}'`;
-  if (index_value != _item.length - 1) {
-  scriptValues += ",";
+    const element = data[index];
+    if (!element) continue;
+    const _item = Object.values(element);
+    scriptValues += "(";
+    for (let index_value = 0; index_value < _item.length; index_value++) {
+      scriptValues += _item[index_value] === null || _item[index_value] === undefined ? "NULL" : `'${_item[index_value]}'`;
+      if (index_value != _item.length - 1) scriptValues += ",";
+    }
+    scriptValues += ")";
+    if (index != data.length - 1) scriptValues += ",";
   }
-  }
-  scriptValues += ")";
-  if (index != data.length - 1) {
-  scriptValues += ",";
-  }
-  }
-  /* if(table == 'invoice_box'){
-  console.log('insert invoice_box', scriptInsert + scriptValues);
-  } */
   return db.executeSql(scriptInsert + scriptValues);
-  }
+}
 
   export async function insertOrReplaceData(db, table, data) {
-    // Validar que los datos sean un arreglo no vacío
     if (!Array.isArray(data) || data.length === 0) {
-      console.error('Datos no válidos para insertar/reemplazar:', data);
-      throw new Error('Datos no válidos para insertar/reemplazar');
+      console.warn(`insertOrReplaceData ${table}: array vacío, skip`);
+      return null;
     }
-  
-    // Obtener las columnas del primer objeto
+    if (!data[0] || typeof data[0] !== 'object') {
+      console.warn(`insertOrReplaceData ${table}: primer elemento nulo, skip`, data[0]);
+      return null;
+    }
     const columns = Object.keys(data[0]);
     if (columns.length === 0) {
-      console.error('No se encontraron columnas en los datos:', data[0]);
-      throw new Error('No se encontraron columnas en los datos');
+      console.warn(`insertOrReplaceData ${table}: sin columnas, skip`);
+      return null;
     }
   
     // Validar que todos los objetos tengan las mismas columnas

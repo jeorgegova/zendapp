@@ -6,6 +6,7 @@ import { getCajaActual } from '../../services/cajaService';
 import { createCashMovement, listMovimientos, getCurrentLocationOrNull } from '../../services/movementsService';
 import { FormatMoneyDecimales } from '../../utils/utilities';
 import { apple } from '../../theme/appleTheme';
+import { appAlert } from '../../components/AppAlert';
 
 export default function MovementsScreen() {
   const [caja, setCaja] = useState(null);
@@ -25,7 +26,7 @@ export default function MovementsScreen() {
       const actual = await getCajaActual();
       setCaja(actual);
       setItems((await listMovimientos({ cajaId: actual?.id || null, limit: 50, offset: 0 })) || []);
-    } catch (e) { Alert.alert('Error', e.message); } finally { setLoading(false); }
+    } catch (e) { appAlert('Error', e.message); } finally { setLoading(false); }
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
   const navigation = useNavigation();
@@ -50,21 +51,21 @@ export default function MovementsScreen() {
   );
 
   const handleSearch = async () => {
-    try { setItems((await listMovimientos({ cajaId: caja?.id || null, limit: 50, offset: 0, search })) || []); } catch (e) { Alert.alert('Error', e.message); }
+    try { setItems((await listMovimientos({ cajaId: caja?.id || null, limit: 50, offset: 0, search })) || []); } catch (e) { appAlert('Error', e.message); }
   };
   const handleCreate = async () => {
     const monto = parseFloat(formMonto.replace(',', '.'));
-    if (!monto || monto <= 0) return Alert.alert('Error', 'Monto inválido');
-    if (!formDesc.trim()) return Alert.alert('Error', 'Descripción requerida');
-    if (!caja) return Alert.alert('Error', 'Debes tener caja abierta');
+    if (!monto || monto <= 0) return appAlert('Error', 'Monto inválido');
+    if (!formDesc.trim()) return appAlert('Error', 'Descripción requerida');
+    if (!caja) return appAlert('Error', 'Debes tener caja abierta');
     setSaving(true);
     try {
       const loc = await getCurrentLocationOrNull();
       let desc = formDesc.trim();
       if (loc.lat && loc.lng) desc += ` [${loc.lat.toFixed(5)},${loc.lng.toFixed(5)}]`;
       await createCashMovement({ cajaId: caja.id, tipo: formTipo, descripcion: desc, monto });
-      setModalVisible(false); setFormDesc(''); setFormMonto(''); setFormTipo('ingreso'); await load(); Alert.alert('Éxito', `${formTipo === 'ingreso' ? 'Ingreso' : 'Retiro'} registrado`);
-    } catch (e) { Alert.alert('Error', e.message); } finally { setSaving(false); }
+      setModalVisible(false); setFormDesc(''); setFormMonto(''); setFormTipo('ingreso'); await load(); appAlert('Éxito', `${formTipo === 'ingreso' ? 'Ingreso' : 'Retiro'} registrado`);
+    } catch (e) { appAlert('Error', e.message); } finally { setSaving(false); }
   };
 
   const filtered = items.filter(i => filterTipo === 'todos' || i.tipo === filterTipo);
@@ -104,7 +105,7 @@ export default function MovementsScreen() {
 
       <FlatList data={filtered} keyExtractor={i => i.id} renderItem={Row} ListEmptyComponent={<View style={styles.empty}><Icon name="inbox" size={28} color={apple.colors.separator} /><Text style={styles.emptyTitle}>Sin movimientos</Text></View>} contentContainerStyle={{ paddingBottom: 90 }} />
 
-      <TouchableOpacity style={[styles.fab, !caja && { backgroundColor: apple.colors.tertiaryLabel }]} onPress={() => caja ? setModalVisible(true) : Alert.alert('Caja cerrada', 'Abre caja en tab Caja para ingresos/retiros.')}>
+      <TouchableOpacity style={[styles.fab, !caja && { backgroundColor: apple.colors.tertiaryLabel }]} onPress={() => caja ? setModalVisible(true) : appAlert('Caja cerrada', 'Abre caja en tab Caja para ingresos/retiros.')}>
         <Icon name="plus" size={18} color="#fff" />
       </TouchableOpacity>
 

@@ -8,6 +8,7 @@ import Geolocation from 'react-native-geolocation-service';
 import { getDbConnection, updateData, insertTables, getData } from '../../../database/db';
 import { IdInsertion, getDateOdooMilisec, getDate, Capitalize, FormatMoneyDecimales } from '../../../utils/utilities';
 import { apple } from '../../../theme/appleTheme';
+import { appAlert } from '../../../components/AppAlert';
 
 const getStatusColor = (tipo) => ({ pago: apple.colors.success, 'no pago': apple.colors.danger, parcial: apple.colors.warning, pendiente: apple.colors.separator }[ (tipo||'').toLowerCase().trim()] || apple.colors.separator);
 const getStatusBg = (tipo) => ({ pago: '#E8F5E9', 'no pago': '#FFEBEE', parcial: '#FFF8E1', pendiente: apple.colors.fill }[ (tipo||'').toLowerCase().trim()] || apple.colors.fill);
@@ -99,8 +100,8 @@ const ItemPayments = memo(({ id, name, address, amount, status, paymentType, est
                 <TouchableOpacity
                   onPress={() => {
                     const num = (telefono || '').replace(/[^0-9+]/g, '');
-                    if (!num) return Alert.alert('Sin teléfono', 'Este cliente no tiene número registrado');
-                    Linking.openURL(`tel:${num}`).catch(() => Alert.alert('Error', 'No se pudo iniciar la llamada'));
+                    if (!num) return appAlert('Sin teléfono', 'Este cliente no tiene número registrado');
+                    Linking.openURL(`tel:${num}`).catch(() => appAlert('Error', 'No se pudo iniciar la llamada'));
                   }}
                   style={styles.phonePill}
                   activeOpacity={0.7}
@@ -125,7 +126,7 @@ const ItemPayments = memo(({ id, name, address, amount, status, paymentType, est
             </TouchableOpacity>
           </View>
 
-          {/* Fila 2: Cuota / Valor + Saldo en línea */}
+          {/* Fila 2: Cuota / Valor + Saldo */}
           <View style={styles.infoRow}>
             <View style={styles.amountBox}>
               <Text style={styles.amountLabel}>{!isPending && tipoTramitado ? 'VALOR PAGO' : 'CUOTA'}</Text>

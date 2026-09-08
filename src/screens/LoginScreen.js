@@ -10,6 +10,7 @@ import { AuthService } from '../services/services';
 import { request, PERMISSIONS, RESULTS } from 'react-native-permissions';
 import { apple } from '../theme/appleTheme';
 import { AppleButton } from '../components/AppleButton';
+import { appAlert } from '../components/AppAlert';
 
 export default function LoginScreen() {
   let db;
@@ -46,32 +47,32 @@ export default function LoginScreen() {
           message: 'Esta aplicación necesita acceso a tu ubicación para registrar visitas o pagos.',
           buttonNeutral: 'Preguntar después', buttonNegative: 'Cancelar', buttonPositive: 'Aceptar',
         });
-        if (granted !== PermissionsAndroid.RESULTS.GRANTED) Alert.alert('Permiso requerido', 'Debes habilitar el acceso a la ubicación para continuar.');
+        if (granted !== PermissionsAndroid.RESULTS.GRANTED) appAlert('Permiso requerido', 'Debes habilitar el acceso a la ubicación para continuar.');
       } else if (Platform.OS === 'ios') {
         const result = await request(PERMISSIONS.IOS.LOCATION_WHEN_IN_USE);
-        if (result !== RESULTS.GRANTED) Alert.alert('Permiso requerido', 'Activa ubicación en Configuración > Privacidad.');
+        if (result !== RESULTS.GRANTED) appAlert('Permiso requerido', 'Activa ubicación en Configuración > Privacidad.');
       }
     } catch (e) { console.error(e); }
   };
 
   const handleLogin = async () => {
-    if (!email.trim() || !password.trim()) return Alert.alert('Error', 'Completa email y contraseña');
+    if (!email.trim() || !password.trim()) return appAlert('Error', 'Completa email y contraseña');
     setLoading(true);
     try {
       const result = await AuthService(db, email, password);
-      if (!result.success) Alert.alert('Error', result.message);
-    } catch (e) { Alert.alert('Error', e.message); } finally { setLoading(false); }
+      if (!result.success) appAlert('Error', result.message);
+    } catch (e) { appAlert('Error', e.message); } finally { setLoading(false); }
   };
 
   const handleRegister = async () => {
     setLoading(true);
     try {
-      if (!regEmail || !regPassword) { Alert.alert('Error', 'Por favor completa todos los campos'); return; }
+      if (!regEmail || !regPassword) { appAlert('Error', 'Por favor completa todos los campos'); return; }
       const { error } = await supabase.auth.signUp({ email: regEmail, password: regPassword });
       if (error) throw error;
-      Alert.alert('¡Registro exitoso!', 'Inicia sesión con tus datos');
+      appAlert('¡Registro exitoso!', 'Inicia sesión con tus datos');
       setModalVisible(false); setRegEmail(''); setRegPassword('');
-    } catch (error) { Alert.alert('Error', error.message || 'Ocurrió un error durante el registro'); }
+    } catch (error) { appAlert('Error', error.message || 'Ocurrió un error durante el registro'); }
     finally { setLoading(false); }
   };
 

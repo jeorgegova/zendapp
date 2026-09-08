@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, FlatList, TextInput, ActivityIndicator, TouchableOpacity, Animated, BackHandler } from 'react-native';
+import { View, Text, StyleSheet, SafeAreaView, FlatList, TextInput, ActivityIndicator, TouchableOpacity, Animated, BackHandler, Alert } from 'react-native';
 import { useFocusEffect, useNavigation, useNavigationState } from '@react-navigation/native';
 import Modal from 'react-native-modal';
 import Icon from 'react-native-vector-icons/FontAwesome';
@@ -7,6 +7,7 @@ import ItemPayments from './components/itemPayments';
 import { getData, getDbConnection } from '../../database/db';
 import { FormatMoneyDecimales } from '../../utils/utilities';
 import { apple } from '../../theme/appleTheme';
+import { appAlert } from '../../components/AppAlert';
 
 
 
@@ -39,7 +40,7 @@ const loadClientsFromDB = async () => {
   try {
     const clientsRows = await getData(db, `SELECT documento, telefono FROM clients`);
     if (clientsRows) for (const c of clientsRows) if (c.documento) clientsByDoc[c.documento] = c.telefono || '';
-  } catch {}
+  } catch { }
   return data.map(i => normalizeClient(i, clientsByDoc));
 };
 
@@ -117,7 +118,43 @@ export default function Payments() {
 
   const handleLogout = async () => {
     setLoggingOut(true);
-    try { await signOut(); } catch {} finally { setLoggingOut(false); setShowLogout(false); }
+    try {
+      const db = await getDbConnection();
+      let pendCount = 0;
+      try {
+        const pend = await getData(db, `SELECT COUNT(*) as c FROM facturas WHERE estadoMovil='pendiente'`);
+        pendCount = Number(pend?.[0]?.c || 0);
+        console.log('pendientes', pendCount);
+      } catch (e) { console.log('pend check error', e); }
+      if (pendCount > 0) {
+        setShowLogout(false);
+        setLoggingOut(false);
+        setTimeout(() => appAlert('Pendientes', `Tienes ${pendCount} clientes por tramitar. Debes visitarlos antes de cerrar sesión.`), 300);
+        return;
+      }
+      // validar caja abierta: sin caja no puede haber sesión
+      try {
+        const { getCajaActual } = require('../../services/cajaService');
+        const caja = await getCajaActual();
+        if (!caja || caja.estado !== 'abierta') {
+          setShowLogout(false);
+          setLoggingOut(false);
+          setTimeout(() => appAlert('Caja cerrada', 'No tienes caja abierta. Se creará una nueva al iniciar sesión.'), 300);
+          // igual permitir cierre pero informar
+        }
+      } catch { }
+      // cerrar caja si hay abierta
+      try {
+        const { getCajaActual, cerrarCaja } = require('../../services/cajaService');
+        const caja = await getCajaActual();
+        if (caja && caja.estado === 'abierta') await cerrarCaja(caja.id);
+      } catch (e) { console.log('cerrar caja logout', e); }
+      // intentar sync final
+      try { const { SyncWithSupabase } = require('../../utils/sync'); await SyncWithSupabase(false, () => { }); } catch { }
+      // borrar datos locales para próximo día
+      try { const { clearAllLocalData } = require('../../utils/clearLocal'); await clearAllLocalData(); } catch { }
+      await signOut();
+    } catch { } finally { setLoggingOut(false); setShowLogout(false); }
   };
 
   useFocusEffect(useCallback(() => {

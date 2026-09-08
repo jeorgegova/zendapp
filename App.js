@@ -15,6 +15,7 @@ import NetInfo from '@react-native-community/netinfo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { EvaluationDataSend } from './src/utils/utilities';
 import { SyncWithSupabase } from './src/utils/sync';
+import { AppAlertProvider, setGlobalAlertFn, useAppAlert } from './src/components/AppAlert';
 
 // desactivar escalado
 import { Text, TextInput } from 'react-native';
@@ -23,8 +24,10 @@ Text.defaultProps.allowFontScaling = false;
 TextInput.defaultProps = TextInput.defaultProps || {};
 TextInput.defaultProps.allowFontScaling = false;
 
-function AppContent() {
+function AppContentInner() {
   const isSyncingRef = useRef(false);
+  const { showAlert } = useAppAlert();
+  useEffect(() => { setGlobalAlertFn(showAlert); }, [showAlert]);
 
   const sincronizarDatosConServidor = async () => {
     let timeoutId;
@@ -81,6 +84,14 @@ function AppContent() {
       <Navigation />
       <Toast position="bottom" />
     </>
+  );
+}
+
+function AppContent() {
+  return (
+    <AppAlertProvider>
+      <AppContentInner />
+    </AppAlertProvider>
   );
 }
 

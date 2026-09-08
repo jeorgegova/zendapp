@@ -11,6 +11,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PermissionsAndroid, Platform } from 'react-native';
 import { check, request, PERMISSIONS, RESULTS } from 'react-native-permissions';
 import { Alert, Linking } from 'react-native'; // Agregado para usar Alert
+import { appAlert } from '../components/AppAlert';
 /* export const clienConect=async()=>{
   try{
   const db = await getDbConnection();
@@ -572,7 +573,7 @@ export const GetPermission = async () => {
 
 // Función para mostrar una alerta indicando la necesidad de permisos
 const showPermissionAlert = () => {
-    Alert.alert(
+    appAlert(
         'Permisos necesarios',
         'Esta aplicación requiere permisos de almacenamiento para funcionar correctamente.',
         [
