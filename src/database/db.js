@@ -22,62 +22,93 @@ export async function initDatabase() {
   db.close();
 }
 
-export async function getData(db, query) {
-  //console.log("Elquery+++++++", query);
+export async function getData(db, query, params = []) {
+  if (query.toLowerCase().indexOf('select') === -1) return null;
+  const resultData = [];
+  const results = params.length ? await db.executeSql(query, params) : await db.executeSql(query);
+  results.forEach(function (result) {
+    for (let i = 0; i < result.rows.length; i++) {
+      resultData.push(result.rows.item(i));
+    }
+  });
+  return resultData;
+}
 
-  if (query.toLowerCase().indexOf('select') != -1) {
-    const resultData = [];
-    const results = await db.executeSql(query);
-    results.forEach(function (result) {
-      for (let i = 0; i < result.rows.length; i++) {
-        //var item = result.rows.item(i);
-        resultData.push(result.rows.item(i));
-      }
-    });
-    return resultData;
+// Helpers seguros con placeholders - usar estos para nuevo código
+export async function querySafe(db, sql, params = []) {
+  return getData(db, sql, params);
+}
+
+export async function executeSafe(db, sql, params = []) {
+  return db.executeSql(sql, params);
+}
+
+export async function insertSafe(db, table, data) {
+  const cols = Object.keys(data);
+  const placeholders = cols.map(() => '?').join(', ');
+  const sql = `INSERT INTO ${table} (${cols.join(', ')}) VALUES (${placeholders})`;
+  return db.executeSql(sql, Object.values(data));
+}
+
+export async function updateSafe(db, table, data, whereClause, whereParams = []) {
+  const { id, ...rest } = data;
+  // si data trae id, usar where id = ?
+  const cols = Object.keys(rest);
+  const setClause = cols.map(c => `${c} = ?`).join(', ');
+  let sql = `UPDATE ${table} SET ${setClause}`;
+  let params = Object.values(rest);
+  if (whereClause) {
+    sql += ` WHERE ${whereClause}`;
+    params = [...params, ...whereParams];
+  } else if (id !== undefined) {
+    sql += ` WHERE id = ?`;
+    params.push(id);
   }
-  return null;
+  return db.executeSql(sql, params);
+}
+
+export async function paginatedQuery(db, baseSql, { limit = 20, offset = 0, params = [] } = {}) {
+  const sql = `${baseSql} LIMIT ? OFFSET ?`;
+  return getData(db, sql, [...params, limit, offset]);
 }
 
 export async function insertOrReplaceDataCaja(db, table, data) {
+  if (!Array.isArray(data) || data.length === 0 || !data[0]) {
+    console.warn(`insertOrReplaceDataCaja ${table}: vacío, skip`);
+    return null;
+  }
   const campos = Object.keys(data[0]);
   const strcampos = campos.toString();
   let scriptInsert = `INSERT OR REPLACE INTO ${table} (${strcampos})`;
   let scriptValues = " VALUES ";
-  
   for (let index = 0; index < data.length; index++) {
-  const element = data[index];
-  const _item = Object.values(element);
-  scriptValues += "(";
-  for (let index_value = 0; index_value < _item.length; index_value++) {
-  scriptValues += _item[index_value] === null || _item[index_value] === undefined ? "NULL" : `'${_item[index_value]}'`;
-  if (index_value != _item.length - 1) {
-  scriptValues += ",";
+    const element = data[index];
+    if (!element) continue;
+    const _item = Object.values(element);
+    scriptValues += "(";
+    for (let index_value = 0; index_value < _item.length; index_value++) {
+      scriptValues += _item[index_value] === null || _item[index_value] === undefined ? "NULL" : `'${_item[index_value]}'`;
+      if (index_value != _item.length - 1) scriptValues += ",";
+    }
+    scriptValues += ")";
+    if (index != data.length - 1) scriptValues += ",";
   }
-  }
-  scriptValues += ")";
-  if (index != data.length - 1) {
-  scriptValues += ",";
-  }
-  }
-  /* if(table == 'invoice_box'){
-  console.log('insert invoice_box', scriptInsert + scriptValues);
-  } */
   return db.executeSql(scriptInsert + scriptValues);
-  }
+}
 
   export async function insertOrReplaceData(db, table, data) {
-    // Validar que los datos sean un arreglo no vacío
     if (!Array.isArray(data) || data.length === 0) {
-      console.error('Datos no válidos para insertar/reemplazar:', data);
-      throw new Error('Datos no válidos para insertar/reemplazar');
+      console.warn(`insertOrReplaceData ${table}: array vacío, skip`);
+      return null;
     }
-  
-    // Obtener las columnas del primer objeto
+    if (!data[0] || typeof data[0] !== 'object') {
+      console.warn(`insertOrReplaceData ${table}: primer elemento nulo, skip`, data[0]);
+      return null;
+    }
     const columns = Object.keys(data[0]);
     if (columns.length === 0) {
-      console.error('No se encontraron columnas en los datos:', data[0]);
-      throw new Error('No se encontraron columnas en los datos');
+      console.warn(`insertOrReplaceData ${table}: sin columnas, skip`);
+      return null;
     }
   
     // Validar que todos los objetos tengan las mismas columnas

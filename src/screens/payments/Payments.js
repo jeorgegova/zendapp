@@ -1,291 +1,340 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  SafeAreaView,
-  FlatList,
-  Switch,
-  TextInput,
-  ActivityIndicator,
-} from 'react-native';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { View, Text, StyleSheet, SafeAreaView, FlatList, TextInput, ActivityIndicator, TouchableOpacity, Animated, BackHandler, Alert } from 'react-native';
+import { useFocusEffect, useNavigation, useNavigationState } from '@react-navigation/native';
+import Modal from 'react-native-modal';
+import Icon from 'react-native-vector-icons/FontAwesome';
 import ItemPayments from './components/itemPayments';
 import { getData, getDbConnection } from '../../database/db';
 import { FormatMoneyDecimales } from '../../utils/utilities';
+import { apple } from '../../theme/appleTheme';
+import { appAlert } from '../../components/AppAlert';
 
-// === COMPONENTE: Tarjeta de Estadísticas ===
-const StatsCard = ({ pending, processed, pendingAmount, collected, progress }) => (
-  <View style={styles.statsContainer}>
-    <View style={styles.statsRow}>
-      <View style={[styles.statBox,{width:'30%'}]}>
-        <Text style={styles.statLabel}>Visitas</Text>
-        <Text style={styles.statNumber}>
-          {processed} <Text style={styles.statNumberDivider}>/</Text> {pending}
-        </Text>
-      </View>
-      <View style={[styles.statBox,{width:'70%'}]}>
-        <Text style={styles.statLabel}>Recaudos</Text>
-        <Text style={styles.statNumber}>
-          {FormatMoneyDecimales(collected)} <Text style={styles.statNumberDivider}>/</Text> {FormatMoneyDecimales(pendingAmount)}
-        </Text>
-      </View>
-    </View>
 
-    <View style={styles.progressContainer}>
-      <View style={styles.progressBar}>
-        <View style={[styles.progressFill, { width: `${progress}%` }]} />
-      </View>
-      <Text style={styles.progressText}>{progress}% completado</Text>
-    </View>
-  </View>
-);
 
-// === FUNCIÓN PURA: Mapeo de tipo de pago ===
-const mapPaymentType = (id) => {
-  const types = { 1: 'MENSUAL', 2: 'SEMANAL', 3: 'QUINCENAL' };
-  return types[id] || 'DESCONOCIDO';
+const mapPaymentType = (id) => ({ 1: 'MENSUAL', 2: 'SEMANAL', 3: 'QUINCENAL' }[id] || '—');
+const normalizeClient = (item, clientsByDoc = {}) => {
+  const telFromRow = (item.telefono || item.celular || '').trim();
+  const telFromClients = item.documento ? (clientsByDoc[item.documento] || '') : '';
+  return {
+    id: item.id, name: (item.name?.trim() || 'Sin nombre'), address: (item.address?.trim() || 'Sin dirección'),
+    amount: Number(item.amount) || 0, status: (item.status || '').toUpperCase().trim(),
+    estadoPago: (item.estadoPago || '').toLowerCase().trim(), estadoMovil: (item.status || '').toLowerCase().trim(),
+    paymentType: mapPaymentType(item.paymentType), time: item.time || '—', saldo: Number(item.saldo) || 0,
+    cuotasPagas: Number(item.cuotasPagas) || 0, saldoVencido: Number(item.saldoVencido) || 0,
+    nombreUno: item.nombreUno?.trim() || '', apellidoUno: item.apellidoUno?.trim() || '',
+    telefono: (telFromRow || telFromClients).trim(),
+    latitud: item.latitud != null && item.latitud !== '' ? Number(item.latitud) : null,
+    longitud: item.longitud != null && item.longitud !== '' ? Number(item.longitud) : null,
+    documento: (item.documento || '').trim(),
+    valorCredito: Number(item.valorInicial || item.valorCredito || 0) || 0,
+  };
 };
 
-// === FUNCIÓN PURA: Normalizar datos de factura ===
-const normalizeClient = (item) => ({
-  id: item.id,
-  name: (item.name?.trim() || 'Sin nombre'),
-  address: (item.address?.trim() || 'Sin dirección'),
-  amount: Number(item.amount) || 0,
-  status: (item.status || '').toUpperCase().trim(),
-  estadoPago: (item.estadoPago || '').toLowerCase().trim(),
-  estadoMovil: (item.status || '').toLowerCase().trim(),
-  paymentType: mapPaymentType(item.paymentType),
-  time: item.time || 'Sin hora',
-  saldo: Number(item.saldo) || 0,
-  cuotasPagas: Number(item.cuotasPagas) || 0,
-  saldoVencido: Number(item.saldoVencido) || 0,
-  nombreUno: item.nombreUno?.trim() || '',
-  apellidoUno: item.apellidoUno?.trim() || '',
-});
-
-// === FUNCIÓN: Cargar clientes desde DB ===
 const loadClientsFromDB = async () => {
   const db = await getDbConnection();
   const data = await getData(
     db,
-    `SELECT
-         id,
-         nombreUno || ' ' || COALESCE(apellidoUno, '') AS name,
-         direccion AS address,
-         valorCuota AS amount,
-         estadoMovil AS status,
-         estado AS estadoPago,
-         paymentTermId AS paymentType,
-         strftime('%H:%M', fecha) AS time,
-         saldo,
-         cuotasPagas,
-         saldoVencido,
-         nombreUno,
-         apellidoUno
-       FROM facturas
-       WHERE estadoMovil IS NOT NULL`
+    `SELECT id, nombreUno || ' ' || COALESCE(apellidoUno, '') AS name, direccion AS address, valorCuota AS amount, estadoMovil AS status, estado AS estadoPago, paymentTermId AS paymentType, strftime('%H:%M', fecha) AS time, saldo, cuotasPagas, saldoVencido, nombreUno, apellidoUno, celular, documento, latitud, longitud, valorInicial FROM facturas WHERE estadoMovil IS NOT NULL AND (saldo > 0 OR id IN (SELECT idFactura FROM pagos WHERE date(substr(horaDispositivo,1,10)) = date('now','localtime')))`
   );
-
-  return data.map(normalizeClient);
+  let clientsByDoc = {};
+  try {
+    const clientsRows = await getData(db, `SELECT documento, telefono FROM clients`);
+    if (clientsRows) for (const c of clientsRows) if (c.documento) clientsByDoc[c.documento] = c.telefono || '';
+  } catch { }
+  return data.map(i => normalizeClient(i, clientsByDoc));
 };
 
-// === FUNCIÓN: Calcular estadísticas reales desde detallesCaja ===
 const calculateStats = async (clients) => {
   const db = await getDbConnection();
-  const pagos = await getData(db, `
-    SELECT SUM(valor) as total 
-    FROM detallesCaja 
-    WHERE tipo = 'pago'
-  `);
+  const pagos = await getData(db, `SELECT SUM(valor) as total FROM detallesCaja WHERE tipo = 'pago'`);
   const collected = Number(pagos[0]?.total || 0);
-
   const processed = clients.filter(c => c.estadoMovil === 'actualizado');
   const pendingAmount = clients.reduce((s, c) => s + c.amount, 0);
   const totalVisits = clients.length;
-  const progress = totalVisits > 0
-    ? Math.round((processed.length / totalVisits) * 100)
-    : 0;
-
-  return {
-    pending: totalVisits,
-    processed: processed.length,
-    pendingAmount,
-    collected,
-    progress,
-  };
+  const progress = totalVisits > 0 ? Math.round((processed.length / totalVisits) * 100) : 0;
+  return { pending: totalVisits, processed: processed.length, pendingAmount, collected, progress };
 };
 
-// === COMPONENTE PRINCIPAL ===
-const Payments = () => {
+export default function Payments() {
+  const navigation = useNavigation();
+  const { signOut } = require('../../context/AuthContext').useAuth();
   const [showPending, setShowPending] = useState(true);
   const [searchText, setSearchText] = useState('');
   const [clients, setClients] = useState([]);
-  const [stats, setStats] = useState({
-    pending: 0,
-    processed: 0,
-    pendingAmount: 0,
-    collected: 0,
-    progress: 0,
-  });
+  const [stats, setStats] = useState({ pending: 0, processed: 0, pendingAmount: 0, collected: 0, progress: 0 });
   const [loading, setLoading] = useState(true);
+  const [showLogout, setShowLogout] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
 
-  // === CARGAR CLIENTES + ESTADÍSTICAS ===
+  // Animaciones de traslación
+  const slideAnim = useRef(new Animated.Value(0)).current; // 0 = pendiente, 1 = tramitados
+  const listTranslateX = useRef(new Animated.Value(0)).current;
+  const listOpacity = useRef(new Animated.Value(1)).current;
+
+  const handleTabChange = (pending) => {
+    if (showPending === pending) return;
+
+    // Animar indicador segmentado
+    Animated.spring(slideAnim, {
+      toValue: pending ? 0 : 1,
+      useNativeDriver: false,
+      friction: 8,
+      tension: 50,
+    }).start();
+
+    // Animar transición de lista con traslación suave
+    const direction = pending ? 30 : -30;
+    Animated.sequence([
+      Animated.parallel([
+        Animated.timing(listTranslateX, { toValue: direction, duration: 100, useNativeDriver: true }),
+        Animated.timing(listOpacity, { toValue: 0, duration: 100, useNativeDriver: true }),
+      ]),
+      Animated.parallel([
+        Animated.timing(listTranslateX, { toValue: 0, duration: 150, useNativeDriver: true }),
+        Animated.timing(listOpacity, { toValue: 1, duration: 150, useNativeDriver: true }),
+      ]),
+    ]).start();
+
+    setShowPending(pending);
+  };
+
   const loadClients = useCallback(async () => {
     setLoading(true);
     try {
-      const normalizedClients = await loadClientsFromDB();
-      setClients(normalizedClients);
-      const newStats = await calculateStats(normalizedClients);
-      setStats(newStats);
-    } catch (error) {
-      console.error('Error cargando facturas:', error);
-    } finally {
-      setLoading(false);
-    }
+      const n = await loadClientsFromDB();
+      setClients(n);
+      setStats(await calculateStats(n));
+    } catch (e) { console.error(e); } finally { setLoading(false); }
   }, []);
+  useEffect(() => { loadClients(); }, [loadClients]);
 
-  // Cargar al montar
-  useEffect(() => {
-    loadClients();
-  }, [loadClients]);
+  const filteredClients = useMemo(() => clients.filter(c => (showPending ? (c.estadoMovil === 'pendiente' && c.saldo > 0 && c.estadoPago !== 'cancel') : c.estadoMovil === 'actualizado') && c.name.toLowerCase().includes(searchText.toLowerCase())), [clients, showPending, searchText]);
 
-  // === RECARGAR TRAS CUALQUIER PAGO ===
-  const handlePaymentSuccess = useCallback(() => {
-    loadClients(); // ← Recarga todo: clientes + estadísticas reales
-  }, [loadClients]);
+  // Interpolación de posición para el fondo animado del segment
+  const segmentLeft = slideAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0%', '50%'],
+  });
 
-  // === FILTRAR CLIENTES ===
-  const filteredClients = useMemo(() => {
-    return clients.filter(client =>
-      (showPending
-        ? (client.estadoMovil === 'pendiente' && client.saldo > 0 && client.estadoPago !== 'cancel')
-        : client.estadoMovil === 'actualizado'
-      ) &&
-      client.name.toLowerCase().includes(searchText.toLowerCase())
-    );
-  }, [clients, showPending, searchText]);
+  const handleLogout = async () => {
+    setLoggingOut(true);
+    try {
+      const db = await getDbConnection();
+      let pendCount = 0;
+      try {
+        const pend = await getData(db, `SELECT COUNT(*) as c FROM facturas WHERE estadoMovil='pendiente'`);
+        pendCount = Number(pend?.[0]?.c || 0);
+        console.log('pendientes', pendCount);
+      } catch (e) { console.log('pend check error', e); }
+      if (pendCount > 0) {
+        setShowLogout(false);
+        setLoggingOut(false);
+        setTimeout(() => appAlert('Pendientes', `Tienes ${pendCount} clientes por tramitar. Debes visitarlos antes de cerrar sesión.`), 300);
+        return;
+      }
+      // validar caja abierta: sin caja no puede haber sesión
+      try {
+        const { getCajaActual } = require('../../services/cajaService');
+        const caja = await getCajaActual();
+        if (!caja || caja.estado !== 'abierta') {
+          setShowLogout(false);
+          setLoggingOut(false);
+          setTimeout(() => appAlert('Caja cerrada', 'No tienes caja abierta. Se creará una nueva al iniciar sesión.'), 300);
+          // igual permitir cierre pero informar
+        }
+      } catch { }
+      // cerrar caja si hay abierta
+      try {
+        const { getCajaActual, cerrarCaja } = require('../../services/cajaService');
+        const caja = await getCajaActual();
+        if (caja && caja.estado === 'abierta') await cerrarCaja(caja.id);
+      } catch (e) { console.log('cerrar caja logout', e); }
+      // intentar sync final
+      try { const { SyncWithSupabase } = require('../../utils/sync'); await SyncWithSupabase(false, () => { }); } catch { }
+      // borrar datos locales para próximo día
+      try { const { clearAllLocalData } = require('../../utils/clearLocal'); await clearAllLocalData(); } catch { }
+      await signOut();
+    } catch { } finally { setLoggingOut(false); setShowLogout(false); }
+  };
+
+  useFocusEffect(useCallback(() => {
+    const onBack = () => {
+      if (showLogout) { setShowLogout(false); return true; }
+      setShowLogout(true);
+      return true;
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
+    const beforeRemove = navigation.addListener('beforeRemove', (e) => {
+      if (e.data.action.type === 'GO_BACK' && !showLogout) {
+        e.preventDefault();
+        setShowLogout(true);
+      }
+    });
+    return () => { sub.remove(); beforeRemove(); };
+  }, [navigation, showLogout, signOut]));
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatsCard {...stats} />
+    <SafeAreaView style={styles.root}>
+      {/* Header integrado estilo compacto con Visitas y Recaudo al lado derecho */}
+      <View style={styles.header}>
+        <View style={styles.headerTop}>
+          <View style={styles.titleSection}>
+            <Text style={styles.largeTitle}>Cartera</Text>
+            <Text style={styles.headerSub}>{filteredClients.length} clientes · {showPending ? 'Por visitar' : 'Tramitados'}</Text>
+          </View>
 
-      <View style={styles.listHeader}>
-        <Text style={styles.listTitle}>
-          {showPending ? 'Clientes por Visitar' : 'Clientes Tramitados'}
-        </Text>
-        <Switch
-          value={!showPending}
-          onValueChange={() => setShowPending(prev => !prev)}
-          thumbColor="#2196F3"
-          trackColor={{ false: '#ccc', true: '#2196F3' }}
-        />
-      </View>
-
-      <TextInput
-        style={styles.searchInput}
-        placeholder="Buscar cliente..."
-        placeholderTextColor="#999"
-        value={searchText}
-        onChangeText={setSearchText}
-      />
-
-      {loading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#2196F3" />
-          <Text style={styles.loadingText}>Cargando clientes...</Text>
-        </View>
-      ) : (
-        <FlatList
-          style={styles.content}
-          data={filteredClients}
-          keyExtractor={(item) => item.id.toString()}
-          renderItem={({ item }) => (
-            <ItemPayments
-              id={item.id}
-              name={item.name}
-              address={item.address}
-              amount={item.amount}
-              status={item.status}
-              time={item.time}
-              paymentType={item.paymentType}
-              estadoPago={item.estadoPago}
-              saldo={item.saldo}
-              cuotasPagas={item.cuotasPagas}
-              saldoVencido={item.saldoVencido}
-              nombreUno={item.nombreUno}
-              apellidoUno={item.apellidoUno}
-              valorCuota={item.amount} 
-              estadoMovil={item.estadoMovil}
-              onPaymentSuccess={handlePaymentSuccess}
-            />
-          )}
-          getItemLayout={(data, index) => ({
-            length: 120,
-            offset: 120 * index,
-            index,
-          })}
-          initialNumToRender={10}
-          maxToRenderPerBatch={10}
-          windowSize={21}
-          removeClippedSubviews={true}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>
-                {searchText
-                  ? 'No se encontraron resultados'
-                  : showPending
-                    ? 'No hay clientes pendientes'
-                    : 'No hay clientes tramitados'}
+          {/* Mini Stats a la derecha del título: Visitas con barra + Recaudo */}
+          <View style={styles.headerStats}>
+            <View style={styles.statMiniItem}>
+              <Text style={styles.statMiniLabel}>VISITAS</Text>
+              <Text style={styles.statMiniVal}>{stats.processed}<Text style={styles.statMiniMuted}>/{stats.pending}</Text></Text>
+              <View style={styles.visitasBarBg}>
+                <View style={[styles.visitasBarFill, { width: `${stats.progress}%` }]} />
+              </View>
+            </View>
+            <View style={styles.statMiniSep} />
+            <View style={styles.statMiniItem}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Text style={styles.statMiniLabel}>RECAUDO</Text>
+                <View style={styles.percentBadge}>
+                  <Text style={styles.percentText}>{stats.progress}%</Text>
+                </View>
+              </View>
+              <Text style={styles.statMiniVal}>
+                {FormatMoneyDecimales(stats.collected)}
+                <Text style={styles.statMiniMuted}> / {FormatMoneyDecimales(stats.pendingAmount)}</Text>
               </Text>
             </View>
-          }
-        />
+          </View>
+        </View>
+
+        {/* Search bar compacta */}
+        <View style={styles.searchBar}>
+          <Icon name="search" size={13} color={apple.colors.tertiaryLabel} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Buscar cliente"
+            placeholderTextColor={apple.colors.tertiaryLabel}
+            value={searchText}
+            onChangeText={setSearchText}
+            returnKeyType="search"
+            clearButtonMode="while-editing"
+          />
+          {searchText.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchText('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Icon name="times-circle" size={14} color={apple.colors.tertiaryLabel} />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Segmented control con traslación fluida */}
+        <View style={styles.segment}>
+          <Animated.View style={[styles.segActiveBg, { left: segmentLeft }]} />
+          <TouchableOpacity activeOpacity={0.7} onPress={() => handleTabChange(true)} style={styles.segOpt}>
+            <Icon name="clock-o" size={12} color={showPending ? apple.colors.label : apple.colors.secondaryLabel} />
+            <Text style={[styles.segText, showPending && styles.segTextActive]}> Por visitar</Text>
+            <View style={[styles.countBadge, showPending && styles.countBadgeActive]}>
+              <Text style={[styles.countText, showPending && styles.countTextActive]}>{clients.filter(c => c.estadoMovil === 'pendiente' && c.saldo > 0).length}</Text>
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity activeOpacity={0.7} onPress={() => handleTabChange(false)} style={styles.segOpt}>
+            <Icon name="check-circle" size={12} color={!showPending ? apple.colors.label : apple.colors.secondaryLabel} />
+            <Text style={[styles.segText, !showPending && styles.segTextActive]}> Tramitados</Text>
+            <View style={[styles.countBadge, !showPending && styles.countBadgeActive]}>
+              <Text style={[styles.countText, !showPending && styles.countTextActive]}>{clients.filter(c => c.estadoMovil === 'actualizado').length}</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {loading ? (
+        <View style={styles.center}><ActivityIndicator size="large" color={apple.colors.blue} /><Text style={styles.loadingText}>Cargando cartera…</Text></View>
+      ) : (
+        <Animated.View style={{ flex: 1, transform: [{ translateX: listTranslateX }], opacity: listOpacity }}>
+          <FlatList
+            style={{ flex: 1 }}
+            contentContainerStyle={{ paddingBottom: 16, paddingTop: 6 }}
+            data={filteredClients}
+            keyExtractor={i => i.id.toString()}
+            renderItem={({ item }) => (
+              <ItemPayments id={item.id} name={item.name} address={item.address} amount={item.amount} status={item.status} time={item.time} paymentType={item.paymentType} estadoPago={item.estadoPago} saldo={item.saldo} cuotasPagas={item.cuotasPagas} saldoVencido={item.saldoVencido} nombreUno={item.nombreUno} apellidoUno={item.apellidoUno} valorCuota={item.amount} estadoMovil={item.estadoMovil} telefono={item.telefono} latitud={item.latitud} longitud={item.longitud} valorCredito={item.valorCredito} onPaymentSuccess={loadClients} />
+            )}
+            ListEmptyComponent={
+              <View style={styles.empty}>
+                <View style={styles.emptyIcon}><Icon name="search" size={22} color={apple.colors.tertiaryLabel} /></View>
+                <Text style={styles.emptyTitle}>Sin resultados</Text>
+                <Text style={styles.emptySub}>{searchText ? 'Prueba otro término' : showPending ? 'No hay clientes por visitar' : 'No hay tramitados'}</Text>
+              </View>
+            }
+          />
+        </Animated.View>
       )}
+
+      <Modal isVisible={showLogout} onBackdropPress={() => setShowLogout(false)} backdropOpacity={0.4} animationIn="slideInUp" animationOut="slideOutDown">
+        <View style={styles.logoutSheet}>
+          <View style={styles.logoutHandle} />
+          <View style={styles.logoutIcon}><Icon name="sign-out" size={22} color={apple.colors.danger} /></View>
+          <Text style={styles.logoutTitle}>¿Cerrar sesión?</Text>
+          <Text style={styles.logoutSub}>Saldrás de tu cuenta y volverás al inicio de sesión.</Text>
+          <View style={styles.logoutActions}>
+            <TouchableOpacity style={styles.logoutCancel} onPress={() => setShowLogout(false)}><Text style={styles.logoutCancelText}>Cancelar</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.logoutConfirm} onPress={handleLogout} disabled={loggingOut}>{loggingOut ? <ActivityIndicator color="#fff" /> : <Text style={styles.logoutConfirmText}>Cerrar sesión</Text>}</TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
-};
+}
 
-export default Payments;
-
-// === ESTILOS ===
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f5f5' },
-  content: { flex: 1 },
-  statsContainer: {
-    padding: 12,
-    backgroundColor: '#fff',
-    margin: 10,
-    marginBottom: 16,
-    borderRadius: 12,
-    borderWidth: 0.5,
-    borderColor: '#E0E0E0',
+  root: { flex: 1, backgroundColor: '#F4F5F7' },
+  header: { backgroundColor: '#FFFFFF', paddingHorizontal: 16, paddingTop: 10, paddingBottom: 12, borderBottomWidth: 1, borderColor: '#E8EAED' },
+  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  titleSection: { flex: 1 },
+  largeTitle: { fontSize: 26, fontWeight: '800', color: apple.colors.label, letterSpacing: -0.6 },
+  headerSub: { fontSize: 12, color: apple.colors.secondaryLabel, marginTop: 1, fontWeight: '500' },
+  headerStats: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F0F2F5', borderRadius: 12, paddingVertical: 6, paddingHorizontal: 10, gap: 10 },
+  statMiniItem: { alignItems: 'flex-start' },
+  statMiniLabel: { fontSize: 9, fontWeight: '700', color: apple.colors.secondaryLabel, letterSpacing: 0.3 },
+  statMiniVal: { fontSize: 12, fontWeight: '700', color: apple.colors.label },
+  statMiniMuted: { fontSize: 10, fontWeight: '500', color: apple.colors.tertiaryLabel },
+  visitasBarBg: { width: 50, height: 3, backgroundColor: '#E2E5EB', borderRadius: 2, overflow: 'hidden', marginTop: 3 },
+  visitasBarFill: { height: '100%', backgroundColor: apple.colors.success, borderRadius: 2 },
+  percentBadge: { backgroundColor: '#E2E5EB', paddingHorizontal: 4, paddingVertical: 0.5, borderRadius: 4 },
+  percentText: { fontSize: 9, fontWeight: '700', color: apple.colors.secondaryLabel },
+  statMiniSep: { width: 1, height: 26, backgroundColor: '#D8DCE3' },
+  searchBar: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#F0F2F5', borderRadius: 12, paddingHorizontal: 12, height: 36, marginTop: 10 },
+  searchInput: { flex: 1, fontSize: 14, color: apple.colors.label, paddingVertical: 0 },
+  segment: { flexDirection: 'row', backgroundColor: '#F0F2F5', borderRadius: 12, padding: 3, marginTop: 10, position: 'relative' },
+  segActiveBg: {
+    position: 'absolute',
+    top: 3,
+    bottom: 3,
+    width: '50%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 9,
   },
-  statsRow: { flexDirection: 'row', marginBottom: 8 },
-  statBox: {  alignItems: 'center' },
-  statLabel: { fontSize: 14, color: '#666', marginBottom: 4 },
-  statNumber: { fontSize: 18, fontWeight: '600', color: '#333' },
-  statNumberDivider: { color: '#999' },
-  progressContainer: { marginTop: 8, alignItems: 'center' },
-  progressBar: { width: '100%', height: 6, backgroundColor: '#E0E0E0', borderRadius: 3, overflow: 'hidden' },
-  progressFill: { height: '100%', backgroundColor: '#4CAF50', borderRadius: 3 },
-  progressText: { fontSize: 12, color: '#666', marginTop: 4 },
-  listHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, marginBottom: 8 },
-  listTitle: { fontSize: 16, fontWeight: '600', color: '#333' },
-  searchInput: {
-    backgroundColor: '#fff',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    marginHorizontal: 16,
-    marginBottom: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    fontSize: 16,
-    color: '#333',
-  },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-  loadingText: { marginTop: 10, fontSize: 16, color: '#666' },
-  emptyContainer: { padding: 30, alignItems: 'center' },
-  emptyText: { fontSize: 16, color: '#999', textAlign: 'center' },
+  segOpt: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 6, zIndex: 1 },
+  segText: { fontSize: 12, fontWeight: '600', color: apple.colors.secondaryLabel },
+  segTextActive: { color: apple.colors.label },
+  countBadge: { backgroundColor: '#E2E5EB', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 999, minWidth: 20, alignItems: 'center' },
+  countBadgeActive: { backgroundColor: apple.colors.label },
+  countText: { fontSize: 10, fontWeight: '700', color: apple.colors.secondaryLabel },
+  countTextActive: { color: '#fff' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 },
+  loadingText: { marginTop: 10, color: apple.colors.secondaryLabel, fontSize: 13 },
+  empty: { alignItems: 'center', padding: 40, marginTop: 12 },
+  emptyIcon: { width: 48, height: 48, borderRadius: 24, backgroundColor: apple.colors.fill, borderWidth: 0.5, borderColor: apple.colors.separator, alignItems: 'center', justifyContent: 'center' },
+  emptyTitle: { marginTop: 12, fontSize: 15, fontWeight: '600', color: apple.colors.label },
+  emptySub: { marginTop: 4, fontSize: 13, color: apple.colors.tertiaryLabel, textAlign: 'center' },
+  logoutSheet: { backgroundColor: '#fff', borderRadius: 24, padding: 20, paddingBottom: 24 },
+  logoutHandle: { width: 36, height: 5, borderRadius: 3, backgroundColor: '#E5E5EA', alignSelf: 'center', marginBottom: 16 },
+  logoutIcon: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#FFEBEE', alignItems: 'center', justifyContent: 'center', alignSelf: 'center', marginBottom: 12, borderWidth: 1, borderColor: '#FFD4D4' },
+  logoutTitle: { fontSize: 17, fontWeight: '700', color: '#1D1D1F', textAlign: 'center' },
+  logoutSub: { fontSize: 13, color: '#8E8E93', textAlign: 'center', marginTop: 6, paddingHorizontal: 12 },
+  logoutActions: { flexDirection: 'row', gap: 10, marginTop: 18 },
+  logoutCancel: { flex: 1, height: 46, borderRadius: 12, backgroundColor: '#F2F2F7', alignItems: 'center', justifyContent: 'center', borderWidth: 0.5, borderColor: '#E5E5EA' },
+  logoutCancelText: { fontWeight: '600', color: '#1D1D1F' },
+  logoutConfirm: { flex: 1, height: 46, borderRadius: 12, backgroundColor: '#FF3B30', alignItems: 'center', justifyContent: 'center' },
+  logoutConfirmText: { fontWeight: '700', color: '#fff' },
 });
