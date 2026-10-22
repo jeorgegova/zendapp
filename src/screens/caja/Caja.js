@@ -8,6 +8,7 @@ import { FormatMoneyDecimales } from '../../utils/utilities';
 import { apple } from '../../theme/appleTheme';
 import { AppleButton } from '../../components/AppleButton';
 import { appAlert } from '../../components/AppAlert';
+import { clearOnlyPendingSync, clearAllLocalData } from '../../utils/clearLocal';
 
 export default function CajaScreen() {
   const { profile } = useAuth();
@@ -57,8 +58,8 @@ export default function CajaScreen() {
   const handleClearPending = () =>
     appAlert('Reiniciar', '¿Borrar solo pendientes que ya están arriba? Usa reinicio total si necesitas borrar todo.', [
       { text: 'Cancelar', style: 'cancel' },
-      { text: 'Borrar pendientes', onPress: async () => { const { clearOnlyPendingSync } = require('../../utils/clearLocal'); await clearOnlyPendingSync(); appAlert('Hecho', 'Pendientes borrados'); load(); } },
-      { text: 'Borrar TODO', style: 'destructive', onPress: async () => { const { clearAllLocalData } = require('../../utils/clearLocal'); await clearAllLocalData(); appAlert('Hecho', 'Base reiniciada. Cierra y abre la app.'); } },
+      { text: 'Borrar pendientes', onPress: async () => { await clearOnlyPendingSync(); appAlert('Hecho', 'Pendientes borrados'); load(); } },
+      { text: 'Borrar TODO', style: 'destructive', onPress: async () => { await clearAllLocalData(); appAlert('Hecho', 'Base reiniciada. Cierra y abre la app.'); } },
     ]);
 
   const handleAbrir = async () => {

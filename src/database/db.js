@@ -2,11 +2,42 @@ import { enablePromise, openDatabase } from 'react-native-sqlite-storage';
 
 enablePromise(true);
 
+export async function ensureDatabaseIntegrity(db) {
+  try {
+    await db.executeSql(`CREATE TABLE IF NOT EXISTS consecutivoTramitado (id INTEGER PRIMARY KEY, valor INTEGER)`);
+    await db.executeSql(`INSERT OR IGNORE INTO consecutivoTramitado (id, valor) VALUES (1, 0)`);
+    await db.executeSql(`CREATE TABLE IF NOT EXISTS ventas_pendientes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      temp_id TEXT UNIQUE,
+      payload TEXT,
+      estado TEXT DEFAULT 'pendiente',
+      created_at TEXT
+    )`);
+
+    const paramRows = await getData(db, `SELECT COUNT(*) as c FROM parametrizacion`);
+    if (!paramRows || !paramRows[0] || paramRows[0].c === 0) {
+      await db.executeSql(`INSERT OR IGNORE INTO parametrizacion (id, nombre, valor) VALUES
+        (1, 'URL', '192.168.1.36:8073'),
+        (2, 'reactiva.bdxmlrpc', ''),
+        (3, 'login', NULL),
+        (4, 'password', NULL),
+        (5, 'uid', NULL),
+        (6, 'permiso', 'cliente'),
+        (7, 'name', NULL),
+        (8, 'partner_id', NULL),
+        (9, 'version', '2.6.3')`);
+    }
+  } catch (err) {
+    console.log('ensureDatabaseIntegrity warning:', err);
+  }
+}
+
 export async function getDbConnection() {
   const db = openDatabase({
     name: 'Zendapp.db',
     createFromLocation: 1,
   });
+  ensureDatabaseIntegrity(db).catch(() => {});
   return db;
 }
 

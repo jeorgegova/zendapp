@@ -1,13 +1,20 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, FlatList, TextInput, ActivityIndicator, TouchableOpacity, Animated, BackHandler, Alert } from 'react-native';
+import { View, Text, StyleSheet, SafeAreaView, FlatList, TextInput, ActivityIndicator, TouchableOpacity, Animated, BackHandler, Alert, RefreshControl } from 'react-native';
 import { useFocusEffect, useNavigation, useNavigationState } from '@react-navigation/native';
 import Modal from 'react-native-modal';
 import Icon from 'react-native-vector-icons/FontAwesome';
+import Toast from 'react-native-toast-message';
 import ItemPayments from './components/itemPayments';
 import { getData, getDbConnection } from '../../database/db';
 import { FormatMoneyDecimales } from '../../utils/utilities';
 import { apple } from '../../theme/appleTheme';
 import { appAlert } from '../../components/AppAlert';
+import { useAuth } from '../../context/AuthContext';
+import { getCajaActual, cerrarCaja } from '../../services/cajaService';
+import { SyncWithSupabase } from '../../utils/sync';
+import { clearAllLocalData } from '../../utils/clearLocal';
+import { getInvoice } from '../../services/services';
+import { supabase } from '../../lib/supabase';
 
 
 
@@ -46,8 +53,12 @@ const loadClientsFromDB = async () => {
 
 const calculateStats = async (clients) => {
   const db = await getDbConnection();
-  const pagos = await getData(db, `SELECT SUM(valor) as total FROM detallesCaja WHERE tipo = 'pago'`);
-  const collected = Number(pagos[0]?.total || 0);
+  // Sumar pagos del dia desde la tabla 'pagos' (SQLite local)
+  let collected = 0;
+  try {
+    const pagos = await getData(db, `SELECT SUM(CAST(valor AS REAL)) as total FROM pagos WHERE tipo != 'nopago' AND date(substr(horaDispositivo,1,10)) = date('now','localtime')`);
+    collected = Number(pagos[0]?.total || 0);
+  } catch { collected = 0; }
   const processed = clients.filter(c => c.estadoMovil === 'actualizado');
   const pendingAmount = clients.reduce((s, c) => s + c.amount, 0);
   const totalVisits = clients.length;
@@ -57,12 +68,13 @@ const calculateStats = async (clients) => {
 
 export default function Payments() {
   const navigation = useNavigation();
-  const { signOut } = require('../../context/AuthContext').useAuth();
+  const { signOut } = useAuth();
   const [showPending, setShowPending] = useState(true);
   const [searchText, setSearchText] = useState('');
   const [clients, setClients] = useState([]);
   const [stats, setStats] = useState({ pending: 0, processed: 0, pendingAmount: 0, collected: 0, progress: 0 });
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [showLogout, setShowLogout] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
 
@@ -101,12 +113,47 @@ export default function Payments() {
   const loadClients = useCallback(async () => {
     setLoading(true);
     try {
-      const n = await loadClientsFromDB();
+      let n = await loadClientsFromDB();
+      // Si la base local de facturas está vacía (ej: recién logueado o recién borrado datos),
+      // descargar inmediatamente desde Supabase
+      if (n.length === 0) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          try {
+            await getInvoice(session.user.id, session.access_token);
+            n = await loadClientsFromDB();
+          } catch (e) { console.log('Auto fetch invoice error:', e); }
+        }
+      }
       setClients(n);
       setStats(await calculateStats(n));
     } catch (e) { console.error(e); } finally { setLoading(false); }
   }, []);
   useEffect(() => { loadClients(); }, [loadClients]);
+
+  const handleSyncAndRefresh = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      Toast.show({ text1: 'Sincronizando con servidor...' });
+      await SyncWithSupabase(false);
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        await getInvoice(session.user.id, session.access_token);
+      }
+
+      const n = await loadClientsFromDB();
+      setClients(n);
+      setStats(await calculateStats(n));
+      Toast.show({ text1: 'Cartera actualizada' });
+    } catch (e) {
+      console.log('Error refreshing payments:', e);
+      Toast.show({ text1: 'Error de sincronización', text2: e.message || String(e) });
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const filteredClients = useMemo(() => clients.filter(c => (showPending ? (c.estadoMovil === 'pendiente' && c.saldo > 0 && c.estadoPago !== 'cancel') : c.estadoMovil === 'actualizado') && c.name.toLowerCase().includes(searchText.toLowerCase())), [clients, showPending, searchText]);
 
@@ -145,14 +192,13 @@ export default function Payments() {
       } catch { }
       // cerrar caja si hay abierta
       try {
-        const { getCajaActual, cerrarCaja } = require('../../services/cajaService');
         const caja = await getCajaActual();
         if (caja && caja.estado === 'abierta') await cerrarCaja(caja.id);
       } catch (e) { console.log('cerrar caja logout', e); }
       // intentar sync final
-      try { const { SyncWithSupabase } = require('../../utils/sync'); await SyncWithSupabase(false, () => { }); } catch { }
+      try { await SyncWithSupabase(false, () => { }); } catch { }
       // borrar datos locales para próximo día
-      try { const { clearAllLocalData } = require('../../utils/clearLocal'); await clearAllLocalData(); } catch { }
+      try { await clearAllLocalData(); } catch { }
       await signOut();
     } catch { } finally { setLoggingOut(false); setShowLogout(false); }
   };
@@ -170,8 +216,7 @@ export default function Payments() {
         setShowLogout(true);
       }
     });
-    return () => { sub.remove(); beforeRemove(); };
-  }, [navigation, showLogout, signOut]));
+  }, [navigation, showLogout]));
 
   return (
     <SafeAreaView style={styles.root}>
@@ -179,7 +224,30 @@ export default function Payments() {
       <View style={styles.header}>
         <View style={styles.headerTop}>
           <View style={styles.titleSection}>
-            <Text style={styles.largeTitle}>Cartera</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Text style={styles.largeTitle}>Cartera</Text>
+              <TouchableOpacity
+                onPress={handleSyncAndRefresh}
+                style={styles.syncBtn}
+                disabled={refreshing}
+                activeOpacity={0.7}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                {refreshing ? (
+                  <ActivityIndicator size="small" color={apple.colors.blue} />
+                ) : (
+                  <Icon name="refresh" size={14} color={apple.colors.blue} />
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setShowLogout(true)}
+                style={styles.syncBtn}
+                activeOpacity={0.7}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Icon name="sign-out" size={14} color={apple.colors.danger} />
+              </TouchableOpacity>
+            </View>
             <Text style={styles.headerSub}>{filteredClients.length} clientes · {showPending ? 'Por visitar' : 'Tramitados'}</Text>
           </View>
 
@@ -247,7 +315,7 @@ export default function Payments() {
         </View>
       </View>
 
-      {loading ? (
+      {loading && clients.length === 0 ? (
         <View style={styles.center}><ActivityIndicator size="large" color={apple.colors.blue} /><Text style={styles.loadingText}>Cargando cartera…</Text></View>
       ) : (
         <Animated.View style={{ flex: 1, transform: [{ translateX: listTranslateX }], opacity: listOpacity }}>
@@ -256,6 +324,14 @@ export default function Payments() {
             contentContainerStyle={{ paddingBottom: 16, paddingTop: 6 }}
             data={filteredClients}
             keyExtractor={i => i.id.toString()}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={handleSyncAndRefresh}
+                tintColor={apple.colors.blue}
+                colors={[apple.colors.blue]}
+              />
+            }
             renderItem={({ item }) => (
               <ItemPayments id={item.id} name={item.name} address={item.address} amount={item.amount} status={item.status} time={item.time} paymentType={item.paymentType} estadoPago={item.estadoPago} saldo={item.saldo} cuotasPagas={item.cuotasPagas} saldoVencido={item.saldoVencido} nombreUno={item.nombreUno} apellidoUno={item.apellidoUno} valorCuota={item.amount} estadoMovil={item.estadoMovil} telefono={item.telefono} latitud={item.latitud} longitud={item.longitud} valorCredito={item.valorCredito} onPaymentSuccess={loadClients} />
             )}
@@ -292,6 +368,14 @@ const styles = StyleSheet.create({
   headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   titleSection: { flex: 1 },
   largeTitle: { fontSize: 26, fontWeight: '800', color: apple.colors.label, letterSpacing: -0.6 },
+  syncBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#F0F2F5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   headerSub: { fontSize: 12, color: apple.colors.secondaryLabel, marginTop: 1, fontWeight: '500' },
   headerStats: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F0F2F5', borderRadius: 12, paddingVertical: 6, paddingHorizontal: 10, gap: 10 },
   statMiniItem: { alignItems: 'flex-start' },

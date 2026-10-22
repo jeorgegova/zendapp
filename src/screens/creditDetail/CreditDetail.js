@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, ActivityIndicator, FlatList, Linking, Platform, Alert } from 'react-native';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import { supabase } from '../../lib/supabase';
+import { getDbConnection, getData } from '../../database/db';
 import { FormatMoneyDecimales } from '../../utils/utilities';
 import { apple } from '../../theme/appleTheme';
 import { AppleCard } from '../../components/AppleCard';
@@ -28,16 +29,53 @@ export default function CreditDetail({ route, navigation }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const { data: inv } = await supabase.from('invoice').select('id, amount, saldo, status, created_at, plazo_id, interes_id, client_id, usuario_id').eq('id', invoiceId).single();
-      setInvoice(inv);
-      if (inv?.client_id) {
-        const { data: cli } = await supabase.from('clients').select('nombre, apellido, alias, telefono, direccion, documento').eq('id', inv.client_id).single();
-        setClient(cli);
+      // 1. Cargar primero de SQLite local
+      const db = await getDbConnection();
+      try {
+        const localRows = await getData(db, `SELECT * FROM facturas WHERE id = ?`, [invoiceId]);
+        if (localRows && localRows.length > 0) {
+          const row = localRows[0];
+          setInvoice({
+            id: row.id,
+            amount: Number(row.valorInicial || row.saldo),
+            saldo: Number(row.saldo),
+            status: row.estado || 'pendiente',
+            created_at: row.fecha,
+          });
+          setClient({
+            nombre: row.nombreUno,
+            apellido: row.apellidoUno,
+            alias: row.alias,
+            telefono: row.celular,
+            direccion: row.direccion,
+            documento: row.documento,
+          });
+          const localPagos = await getData(db, `SELECT id, valor AS amount, horaDispositivo AS payment_date, tipo AS method FROM pagos WHERE idFactura = ? ORDER BY horaDispositivo DESC`, [invoiceId]);
+          setPagos(localPagos || []);
+        }
+      } catch (err) {
+        console.log('Error leyendo factura local:', err);
       }
-      const { data: cs } = await supabase.from('cuotas').select('id, numero, fecha_vencimiento, monto, estado, monto_pagado').eq('invoice_id', invoiceId).order('numero', { ascending: true });
-      setCuotas(cs || []);
-      const { data: ps } = await supabase.from('payments').select('id, amount, payment_date, method, created_at').eq('invoice_id', invoiceId).order('payment_date', { ascending: false });
-      setPagos(ps || []);
+
+      // 2. Si no es un id temporal offline, consultar Supabase para detalles remotos si hay red
+      if (!String(invoiceId).startsWith('-') && !String(invoiceId).startsWith('temp-')) {
+        try {
+          const { data: inv } = await supabase.from('invoice').select('id, amount, saldo, status, created_at, plazo_id, interes_id, client_id, usuario_id').eq('id', invoiceId).single();
+          if (inv) {
+            setInvoice(inv);
+            if (inv.client_id) {
+              const { data: cli } = await supabase.from('clients').select('nombre, apellido, alias, telefono, direccion, documento').eq('id', inv.client_id).single();
+              if (cli) setClient(cli);
+            }
+            const { data: cs } = await supabase.from('cuotas').select('id, numero, fecha_vencimiento, monto, estado, monto_pagado').eq('invoice_id', invoiceId).order('numero', { ascending: true });
+            if (cs) setCuotas(cs);
+            const { data: ps } = await supabase.from('payments').select('id, amount, payment_date, method, created_at').eq('invoice_id', invoiceId).order('payment_date', { ascending: false });
+            if (ps) setPagos(ps);
+          }
+        } catch {
+          // Ignorar fallo de red si ya cargamos local
+        }
+      }
     } catch (e) {
       console.error(e);
       appAlert('Error', 'No se pudo cargar el detalle');

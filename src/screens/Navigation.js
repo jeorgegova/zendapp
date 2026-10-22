@@ -11,6 +11,15 @@ import CrearCliente from './createClient/CrearCliente';
 import CajaScreen from './caja/Caja';
 import MovementsScreen from './movements/Movements';
 import CreditDetail from './creditDetail/CreditDetail';
+import {
+  AdminUsuarios,
+  AdminCartera,
+  AdminCarteraDetalle,
+  AdminCajas,
+  AdminCajaDetalle,
+  AdminMorosos,
+  AdminReportes,
+} from './admin';
 import { useAuth } from '../context/AuthContext';
 
 const Stack = createNativeStackNavigator();
@@ -24,10 +33,11 @@ export const menuConfig = {
     { key: 'caja', title: 'Caja', route: 'Caja', icon: 'shopping-cart', permissions: ['vendedor', 'admin'] },
   ],
   admin: [
-    { key: 'payments', title: 'Pagos', route: 'Payments', icon: 'money', permissions: ['admin', 'vendedor'] },
-    { key: 'create_sale', title: 'Nueva Venta', route: 'CreateClient', icon: 'user-plus', permissions: ['admin', 'vendedor'] },
-    { key: 'movements', title: 'Movimientos', route: 'Movements', icon: 'exchange', permissions: ['admin', 'vendedor'] },
-    { key: 'caja', title: 'Caja', route: 'Caja', icon: 'shopping-cart', permissions: ['admin', 'vendedor'] },
+    { key: 'usuarios', title: 'Usuarios', route: 'AdminUsuarios', icon: 'users', permissions: ['admin'] },
+    { key: 'cartera', title: 'Cartera', route: 'AdminCartera', icon: 'briefcase', permissions: ['admin'] },
+    { key: 'cajas', title: 'Cajas', route: 'AdminCajas', icon: 'archive', permissions: ['admin'] },
+    { key: 'morosos', title: 'Morosos', route: 'AdminMorosos', icon: 'exclamation-triangle', permissions: ['admin'] },
+    { key: 'reportes', title: 'Reportes', route: 'AdminReportes', icon: 'bar-chart', permissions: ['admin'] },
   ],
   cliente: [
     { key: 'payments', title: 'Mis Pagos', route: 'Payments', icon: 'money', permissions: ['cliente'] },
@@ -40,6 +50,11 @@ const routeComponents = {
   Payments: Payments,
   Movements: MovementsScreen,
   Caja: CajaScreen,
+  AdminUsuarios: AdminUsuarios,
+  AdminCartera: AdminCartera,
+  AdminCajas: AdminCajas,
+  AdminMorosos: AdminMorosos,
+  AdminReportes: AdminReportes,
 };
 
 function MainTabs() {
@@ -101,6 +116,8 @@ function RootNavigator() {
         <>
           <Stack.Screen name="Main" component={MainTabs} />
           <Stack.Screen name="CreditDetail" component={CreditDetail} options={{ headerShown: false }} />
+          <Stack.Screen name="AdminCarteraDetalle" component={AdminCarteraDetalle} options={{ headerShown: false }} />
+          <Stack.Screen name="AdminCajaDetalle" component={AdminCajaDetalle} options={{ headerShown: false }} />
         </>
       ) : (
         <Stack.Screen name="Login" component={LoginScreen} />

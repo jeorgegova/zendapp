@@ -1,21 +1,47 @@
 import { supabase } from '../lib/supabase';
+import { getDbConnection, getData, insertOrReplaceData } from '../database/db';
 
 export async function getCajaActual() {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) throw new Error('No autenticado');
-  const userId = session.user.id;
+  const db = await getDbConnection();
+  // 1. Primero intentar leer de la base de datos local SQLite (Offline-First)
+  try {
+    const localCajas = await getData(db, `SELECT * FROM cajas WHERE estado = 'abierta' ORDER BY fecha_apertura DESC LIMIT 1`);
+    if (localCajas && localCajas.length > 0) {
+      return localCajas[0];
+    }
+  } catch {}
 
-  const { data, error } = await supabase
-    .from('cajas')
-    .select('*')
-    .eq('usuario_id', userId)
-    .eq('estado', 'abierta')
-    .order('fecha_apertura', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  // 2. Si no se encontró local, consultar Supabase y cachear en SQLite
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return null;
+    const userId = session.user.id;
 
-  if (error) throw error;
-  return data; // null si no hay abierta
+    const { data, error } = await supabase
+      .from('cajas')
+      .select('*')
+      .eq('usuario_id', userId)
+      .eq('estado', 'abierta')
+      .order('fecha_apertura', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (data) {
+      try {
+        await insertOrReplaceData(db, 'cajas', [data]);
+      } catch {}
+    }
+    return data;
+  } catch {
+    // Si no hay red, fallback a lo que esté en SQLite
+    try {
+      const fallback = await getData(db, `SELECT * FROM cajas WHERE estado = 'abierta' LIMIT 1`);
+      return fallback?.[0] || null;
+    } catch {
+      return null;
+    }
+  }
 }
 
 export async function getHistorialCajas(limit = 20, offset = 0) {
