@@ -202,7 +202,6 @@ export default function Payments() {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
         await getInvoice(session.user.id, session.access_token);
-        await SyncCajaAndMovimientos();
       }
 
       const n = await loadClientsFromDB();

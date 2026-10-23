@@ -4,7 +4,7 @@ import Icon from 'react-native-vector-icons/FontAwesome';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { getCajaActual } from '../../services/cajaService';
 import { createCashMovement, listMovimientos, getCurrentLocationOrNull } from '../../services/movementsService';
-import { FormatMoneyDecimales } from '../../utils/utilities';
+import { FormatMoneyDecimales, formatMoneyInput, parseMoneyToNumeric } from '../../utils/utilities';
 import { apple } from '../../theme/appleTheme';
 import { appAlert } from '../../components/AppAlert';
 
@@ -73,7 +73,7 @@ export default function MovementsScreen() {
     }
   };
   const handleCreate = async () => {
-    const monto = parseFloat(formMonto.replace(',', '.'));
+    const monto = parseMoneyToNumeric(formMonto);
     if (!monto || monto <= 0) return appAlert('Error', 'Monto inválido');
     if (!formDesc.trim()) return appAlert('Error', 'Descripción requerida');
     if (!caja) return appAlert('Error', 'Debes tener caja abierta');
@@ -146,7 +146,7 @@ export default function MovementsScreen() {
           </View>
           <Text style={styles.hint}>Venta/pago son automáticos.</Text>
           <Text style={styles.label}>Descripción</Text><TextInput style={styles.input} value={formDesc} onChangeText={setFormDesc} placeholder="Ej. Transporte, consignación" placeholderTextColor={apple.colors.tertiaryLabel} />
-          <Text style={styles.label}>Monto</Text><TextInput style={styles.input} value={formMonto} onChangeText={setFormMonto} keyboardType="numeric" placeholder="0.00" placeholderTextColor={apple.colors.tertiaryLabel} />
+          <Text style={styles.label}>Monto</Text><TextInput style={styles.input} value={formMonto} onChangeText={t => setFormMonto(formatMoneyInput(t))} keyboardType="numeric" placeholder="$ 0" placeholderTextColor={apple.colors.tertiaryLabel} />
           <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}><TouchableOpacity style={styles.cancel} onPress={() => setModalVisible(false)}><Text style={styles.cancelText}>Cancelar</Text></TouchableOpacity><TouchableOpacity style={styles.save} onPress={handleCreate} disabled={saving}>{saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Guardar</Text>}</TouchableOpacity></View>
         </View></View>
       </Modal>

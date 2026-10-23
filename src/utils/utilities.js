@@ -187,6 +187,39 @@ export const FormatMoneyDecimales = (value) => {
     return '$ ' + NumberWithCommasDecimales(value);
 };
 
+/**
+ * Extrae solo dígitos y remueve ceros a la izquierda.
+ * No permite puntos, comas, espacios ni ningún caracter no numérico.
+ * Si el usuario intenta escribir 0 al inicio, retorna '' (no permite iniciar con $0 ni 0).
+ */
+export const cleanMoneyValue = (value) => {
+    if (value === null || value === undefined) return '';
+    const digits = String(value).replace(/\D/g, '');
+    return digits.replace(/^0+/, '');
+};
+
+/**
+ * Formatea un valor monetario en tiempo real para inputs con formato moneda de pesos:
+ * - Filtra caracteres no numéricos
+ * - No permite que inicie con $0 ni 0
+ * - Aplica puntos separadores de miles de pesos (ej. $ 50.000)
+ */
+export const formatMoneyInput = (value, withSymbol = true) => {
+    const clean = cleanMoneyValue(value);
+    if (!clean) return '';
+    const formatted = clean.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    return withSymbol ? `$ ${formatted}` : formatted;
+};
+
+/**
+ * Convierte cualquier texto formateado (ej. '$ 50.000' o '50.000') en un número puro
+ * listo para guardarse en la base de datos (ej. 50000).
+ */
+export const parseMoneyToNumeric = (value) => {
+    const clean = cleanMoneyValue(value);
+    return clean ? parseFloat(clean) : 0;
+};
+
 export const FormatNumber = (value) => {
     if (value % 1 === 0) {
         // Si no tiene decimales, retornar el número sin .00

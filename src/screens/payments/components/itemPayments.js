@@ -6,7 +6,7 @@ import Icon from 'react-native-vector-icons/FontAwesome';
 import Toast from 'react-native-toast-message';
 import Geolocation from 'react-native-geolocation-service';
 import { getDbConnection, updateData, insertTables, getData } from '../../../database/db';
-import { IdInsertion, getDateOdooMilisec, getDate, Capitalize, FormatMoneyDecimales } from '../../../utils/utilities';
+import { IdInsertion, getDateOdooMilisec, getDate, Capitalize, FormatMoneyDecimales, formatMoneyInput, parseMoneyToNumeric } from '../../../utils/utilities';
 import { getCajaActual } from '../../../services/cajaService';
 import { apple } from '../../../theme/appleTheme';
 import { appAlert } from '../../../components/AppAlert';
@@ -273,12 +273,11 @@ const ItemPayments = memo(({
           <View style={styles.handle} />
           <Text style={styles.sheetTitle}>Pago parcial</Text>
           <Text style={styles.sheetSub}>{name} · Saldo {FormatMoneyDecimales(saldo)}</Text>
-          <TextInput placeholder="0.00" keyboardType="numeric" style={styles.sheetInput} value={valorParcial} onChangeText={setValorParcial} placeholderTextColor={apple.colors.tertiaryLabel} />
+          <TextInput placeholder="$ 0" keyboardType="numeric" style={styles.sheetInput} value={valorParcial} onChangeText={t => setValorParcial(formatMoneyInput(t))} placeholderTextColor={apple.colors.tertiaryLabel} />
           <TouchableOpacity
             style={styles.sheetPrimary}
             onPress={() => {
-              const cleanStr = (valorParcial || '').replace(/[^0-9]/g, '');
-              const v = Number(cleanStr);
+              const v = parseMoneyToNumeric(valorParcial);
               if (isNaN(v) || v <= 0) return Toast.show({ text1: 'Monto inválido', text2: 'Ingresa un valor mayor a 0' });
               if (v > saldo) return Toast.show({ text1: 'Monto inválido', text2: 'No puede superar el saldo pendiente' });
               executePaymentAction('parcial', v);

@@ -4,7 +4,7 @@ import Icon from 'react-native-vector-icons/FontAwesome';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { getCajaActual, abrirCaja, cerrarCaja, getMovimientosCaja, getHistorialCajas } from '../../services/cajaService';
 import { useAuth } from '../../context/AuthContext';
-import { FormatMoneyDecimales } from '../../utils/utilities';
+import { FormatMoneyDecimales, formatMoneyInput, parseMoneyToNumeric } from '../../utils/utilities';
 import { apple } from '../../theme/appleTheme';
 import { AppleButton } from '../../components/AppleButton';
 import { appAlert } from '../../components/AppAlert';
@@ -17,7 +17,7 @@ export default function CajaScreen() {
   const [historial, setHistorial] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [saldoInicial, setSaldoInicial] = useState('0');
+  const [saldoInicial, setSaldoInicial] = useState('');
   const [tab, setTab] = useState('actual');
 
   const load = useCallback(async () => {
@@ -68,7 +68,7 @@ export default function CajaScreen() {
     ]);
 
   const handleAbrir = async () => {
-    const val = parseFloat(saldoInicial.replace(',', '.')) || 0;
+    const val = parseMoneyToNumeric(saldoInicial);
     if (val < 0) return appAlert('Error', 'Saldo inicial no puede ser negativo');
     try { setLoading(true); await abrirCaja(val); await load(); appAlert('Éxito', 'Caja abierta'); } catch (e) { appAlert('Error', e.message); } finally { setLoading(false); }
   };
@@ -120,7 +120,7 @@ export default function CajaScreen() {
                 <Text style={styles.emptyTitle}>No hay caja abierta</Text>
                 <Text style={styles.emptySub}>Ingresa el saldo inicial para iniciar jornada</Text>
                 <View style={styles.inputRow}>
-                  <TextInput style={styles.input} value={saldoInicial} onChangeText={setSaldoInicial} keyboardType="numeric" placeholder="0.00" placeholderTextColor={apple.colors.tertiaryLabel} />
+                  <TextInput style={styles.input} value={saldoInicial} onChangeText={t => setSaldoInicial(formatMoneyInput(t))} keyboardType="numeric" placeholder="$ 0" placeholderTextColor={apple.colors.tertiaryLabel} />
                   <AppleButton title="Abrir caja" onPress={handleAbrir} style={{ flex: 1 }} />
                 </View>
               </View>

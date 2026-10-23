@@ -4,8 +4,19 @@ enablePromise(true);
 
 async function ensureColumnExists(db, table, column, colType = 'TEXT') {
   try {
-    const info = await getData(db, `PRAGMA table_info(${table})`);
-    const exists = info && info.some(col => col.name && col.name.toLowerCase() === column.toLowerCase());
+    const results = await db.executeSql(`PRAGMA table_info(${table})`);
+    let exists = false;
+    if (results && results.length) {
+      results.forEach(res => {
+        for (let i = 0; i < res.rows.length; i++) {
+          const item = res.rows.item(i);
+          if (item?.name && item.name.toLowerCase() === column.toLowerCase()) {
+            exists = true;
+            break;
+          }
+        }
+      });
+    }
     if (!exists) {
       await db.executeSql(`ALTER TABLE ${table} ADD COLUMN ${column} ${colType}`);
     }
@@ -92,19 +103,23 @@ export async function ensureDatabaseIntegrity(db) {
 }
 
 let dbInstance = null;
-let dbInitPromise = null;
+let isIntegrityEnsured = false;
 
 export async function getDbConnection() {
   if (!dbInstance) {
-    dbInstance = openDatabase({
+    dbInstance = await openDatabase({
       name: 'Zendapp.db',
       createFromLocation: 1,
     });
   }
-  if (!dbInitPromise) {
-    dbInitPromise = ensureDatabaseIntegrity(dbInstance);
+  if (!isIntegrityEnsured) {
+    try {
+      await ensureDatabaseIntegrity(dbInstance);
+      isIntegrityEnsured = true;
+    } catch (e) {
+      console.log('ensureDatabaseIntegrity error:', e);
+    }
   }
-  await dbInitPromise;
   return dbInstance;
 }
 

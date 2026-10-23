@@ -58,6 +58,13 @@ export const SyncWithSupabase = async (toas = true, callLoading = () => { }) => 
 const SendVentas = async (toas) => {
   const db = await getDbConnection();
   try {
+    await db.executeSql(`CREATE TABLE IF NOT EXISTS ventas_pendientes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      temp_id TEXT UNIQUE,
+      payload TEXT,
+      estado TEXT DEFAULT 'pendiente',
+      created_at TEXT
+    )`);
     // Recuperar cualquier venta que haya quedado en 'enviando' por crash previo
     await db.executeSql(`UPDATE ventas_pendientes SET estado = 'pendiente' WHERE estado = 'enviando'`);
 

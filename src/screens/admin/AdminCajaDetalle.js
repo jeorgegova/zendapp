@@ -17,6 +17,7 @@ import Icon from 'react-native-vector-icons/FontAwesome';
 import { apple } from '../../theme/appleTheme';
 import { appAlert } from '../../components/AppAlert';
 import { getCajaMovements, createAdminCajaMovement } from '../../services/adminService';
+import { formatMoneyInput, parseMoneyToNumeric } from '../../utils/utilities';
 
 const formatMoney = (val) => {
   const num = parseFloat(val) || 0;
@@ -90,8 +91,9 @@ export default function AdminCajaDetalle() {
   };
 
   const handleCreateMovement = async () => {
-    if (!movDesc.trim() || !movMonto.trim()) {
-      appAlert('Campos requeridos', 'Por favor ingresa descripción y monto');
+    const montoNum = parseMoneyToNumeric(movMonto);
+    if (!movDesc.trim() || !montoNum || montoNum <= 0) {
+      appAlert('Campos requeridos', 'Por favor ingresa descripción y un monto válido');
       return;
     }
     const cajaId = caja.caja_id || caja.id;
@@ -101,7 +103,7 @@ export default function AdminCajaDetalle() {
         cajaId,
         tipo: movTipo === 'gasto' ? 'retiro' : movTipo,
         descripcion: movTipo === 'gasto' ? `[Gasto] ${movDesc.trim()}` : movDesc.trim(),
-        monto: movMonto,
+        monto: montoNum,
       });
       setModalVisible(false);
       setMovDesc('');
@@ -301,9 +303,9 @@ export default function AdminCajaDetalle() {
               <TextInput
                 style={styles.input}
                 value={movMonto}
-                onChangeText={setMovMonto}
+                onChangeText={t => setMovMonto(formatMoneyInput(t))}
                 keyboardType="numeric"
-                placeholder="0"
+                placeholder="$ 0"
                 placeholderTextColor={apple.colors.tertiaryLabel}
               />
             </View>

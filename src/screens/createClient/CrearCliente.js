@@ -13,6 +13,7 @@ import { getCajaActual } from '../../services/cajaService';
 import { supabase } from '../../lib/supabase';
 
 import { SyncWithSupabase } from '../../utils/sync';
+import { formatMoneyInput, parseMoneyToNumeric } from '../../utils/utilities';
 
 const FormField = React.memo(({ label, value, onChangeText, placeholder, keyboardType, icon }) => (
   <View style={styles.field}>
@@ -70,7 +71,10 @@ const CrearCliente = () => {
   );
 
   useEffect(() => {
-    const isValid = Object.values(formData).every(v => v.trim() !== '');
+    const isValid = Object.entries(formData).every(([k, v]) => {
+      if (k === 'valor') return parseMoneyToNumeric(v) > 0;
+      return typeof v === 'string' && v.trim() !== '';
+    });
     setIsFormValid(isValid);
   }, [formData]);
 
@@ -84,6 +88,11 @@ const CrearCliente = () => {
   };
 
   const handleChange = useCallback((name, value) => {
+    if (name === 'valor') {
+      const formatted = formatMoneyInput(value);
+      setFormData(p => ({ ...p, [name]: formatted }));
+      return;
+    }
     setFormData(p => ({ ...p, [name]: value }));
   }, []);
   const handlePickerSelect = (name, value, label) => { setFormData(p => ({ ...p, [name]: value })); setFormDataLabels(p => ({ ...p, [name]: label })); };
@@ -106,7 +115,12 @@ const CrearCliente = () => {
       }
 
       const { nombre, apellido, alias, telefono, direccion, documento, valor, plazo, interes } = formData;
-      const montoNum = parseFloat(valor);
+      const montoNum = parseMoneyToNumeric(valor);
+      if (!montoNum || montoNum <= 0) {
+        appAlert('Valor inválido', 'El valor debe ser mayor a 0');
+        setSaving(false);
+        return;
+      }
       const database = await getDbConnection();
 
       // Calcular número de cuotas y valor por cuota según el plazo seleccionado
@@ -137,6 +151,13 @@ const CrearCliente = () => {
       };
 
       // 2. Guardar en ventas_pendientes (para que el worker de sync lo suba cuando haya red)
+      await database.executeSql(`CREATE TABLE IF NOT EXISTS ventas_pendientes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        temp_id TEXT UNIQUE,
+        payload TEXT,
+        estado TEXT DEFAULT 'pendiente',
+        created_at TEXT
+      )`);
       await database.executeSql(
         `INSERT INTO ventas_pendientes (temp_id, payload, estado, created_at) VALUES (?, ?, 'pendiente', ?)`,
         [String(tempId), JSON.stringify(salePayload), nowIso]
@@ -178,18 +199,19 @@ const CrearCliente = () => {
       // 5. Descontar saldo_final de la caja localmente
       try {
         await database.executeSql(`UPDATE cajas SET saldo_final = COALESCE(saldo_final, 0) - ? WHERE id = ?`, [montoNum, cajaAbierta.id]);
-      } catch {}
+      } catch { }
 
       // 6. Si hay conexión en este instante, disparar sincronización en background
       try {
-        SyncWithSupabase(false, () => {});
-      } catch {}
+        SyncWithSupabase(false, () => { });
+      } catch { }
 
       appAlert('Éxito', 'Venta registrada localmente. Se sincronizará de inmediato si tienes conexión, o se guardará offline para subir luego.');
       setFormData({ nombre: '', apellido: '', alias: '', direccion: '', telefono: '', genero: '', documento: '', valor: '', plazo: '', interes: '' });
       setFormDataLabels({ plazo: '', interes: '' });
       navigation.navigate('Payments');
     } catch (err) {
+      console.log("E error------------", err.message);
       appAlert('Error', err.message || 'No se pudo guardar la venta');
     } finally {
       setSaving(false);
@@ -237,7 +259,7 @@ const CrearCliente = () => {
 
             <View style={styles.section}>
               <View style={styles.sectionHeader}><View style={[styles.sectionIcon, { backgroundColor: '#FFF3E0' }]}><Icon name="money" size={14} color={apple.colors.warning} /></View><Text style={styles.sectionTitle}>Venta</Text></View>
-              <FormField label="Valor *" value={formData.valor} onChangeText={t => handleChange('valor', t)} placeholder="0.00" keyboardType="numeric" icon="dollar" />
+              <FormField label="Valor *" value={formData.valor} onChangeText={t => handleChange('valor', t)} placeholder="$ 0" keyboardType="numeric" /* icon="dollar" */ />
               <Text style={styles.fieldLabel}>Plazo *</Text>
               <TouchableOpacity style={styles.picker} onPress={() => setShowPlazoModal(true)}>
                 <Text style={[styles.pickerText, !formDataLabels.plazo && { color: apple.colors.tertiaryLabel }]}>{formDataLabels.plazo || 'Selecciona plazo'}</Text>

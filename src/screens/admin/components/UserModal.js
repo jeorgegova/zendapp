@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import { apple } from '../../../theme/appleTheme';
+import { formatMoneyInput, parseMoneyToNumeric, cleanMoneyValue } from '../../../utils/utilities';
 
 export const UserModal = ({ visible, onClose, onSave, editingUser = null }) => {
   const isEditing = !!editingUser;
@@ -38,10 +39,10 @@ export const UserModal = ({ visible, onClose, onSave, editingUser = null }) => {
       setEmail(editingUser.email || '');
       setPassword('');
       setRol(editingUser.rol || 'vendedor');
-      setDineroMaxCaja(editingUser.dinero_max_caja ? String(editingUser.dinero_max_caja) : '0');
-      setDineroMaxVenta(editingUser.dinero_max_venta ? String(editingUser.dinero_max_venta) : '0');
-      setDineroMaxGasto(editingUser.dinero_max_gasto ? String(editingUser.dinero_max_gasto) : '0');
-      setMaxCuotas(editingUser.max_cuotas ? String(editingUser.max_cuotas) : '30');
+      setDineroMaxCaja(editingUser.dinero_max_caja ? formatMoneyInput(editingUser.dinero_max_caja) : '');
+      setDineroMaxVenta(editingUser.dinero_max_venta ? formatMoneyInput(editingUser.dinero_max_venta) : '');
+      setDineroMaxGasto(editingUser.dinero_max_gasto ? formatMoneyInput(editingUser.dinero_max_gasto) : '');
+      setMaxCuotas(editingUser.max_cuotas ? cleanMoneyValue(editingUser.max_cuotas) : '30');
       setPermiteBorrarVenta(!!editingUser.permite_borrar_venta);
       setPermiteModificarPagos(!!editingUser.permite_modificar_pagos);
     } else {
@@ -50,9 +51,9 @@ export const UserModal = ({ visible, onClose, onSave, editingUser = null }) => {
       setEmail('');
       setPassword('');
       setRol('vendedor');
-      setDineroMaxCaja('500000');
-      setDineroMaxVenta('200000');
-      setDineroMaxGasto('50000');
+      setDineroMaxCaja(formatMoneyInput('500000'));
+      setDineroMaxVenta(formatMoneyInput('200000'));
+      setDineroMaxGasto(formatMoneyInput('50000'));
       setMaxCuotas('30');
       setPermiteBorrarVenta(false);
       setPermiteModificarPagos(false);
@@ -71,10 +72,10 @@ export const UserModal = ({ visible, onClose, onSave, editingUser = null }) => {
         email: email.trim(),
         password: password.trim(),
         rol,
-        dinero_max_caja: parseFloat(dineroMaxCaja) || 0,
-        dinero_max_venta: parseFloat(dineroMaxVenta) || 0,
-        dinero_max_gasto: parseFloat(dineroMaxGasto) || 0,
-        max_cuotas: parseInt(maxCuotas, 10) || 30,
+        dinero_max_caja: parseMoneyToNumeric(dineroMaxCaja),
+        dinero_max_venta: parseMoneyToNumeric(dineroMaxVenta),
+        dinero_max_gasto: parseMoneyToNumeric(dineroMaxGasto),
+        max_cuotas: parseInt(cleanMoneyValue(maxCuotas) || '30', 10),
         permite_borrar_venta: permiteBorrarVenta,
         permite_modificar_pagos: permiteModificarPagos,
       });
@@ -194,9 +195,9 @@ export const UserModal = ({ visible, onClose, onSave, editingUser = null }) => {
                 <TextInput
                   style={styles.input}
                   value={dineroMaxCaja}
-                  onChangeText={setDineroMaxCaja}
+                  onChangeText={t => setDineroMaxCaja(formatMoneyInput(t))}
                   keyboardType="numeric"
-                  placeholder="0"
+                  placeholder="$ 0"
                   placeholderTextColor={apple.colors.tertiaryLabel}
                 />
               </View>
@@ -205,9 +206,9 @@ export const UserModal = ({ visible, onClose, onSave, editingUser = null }) => {
                 <TextInput
                   style={styles.input}
                   value={dineroMaxVenta}
-                  onChangeText={setDineroMaxVenta}
+                  onChangeText={t => setDineroMaxVenta(formatMoneyInput(t))}
                   keyboardType="numeric"
-                  placeholder="0"
+                  placeholder="$ 0"
                   placeholderTextColor={apple.colors.tertiaryLabel}
                 />
               </View>
@@ -219,9 +220,9 @@ export const UserModal = ({ visible, onClose, onSave, editingUser = null }) => {
                 <TextInput
                   style={styles.input}
                   value={dineroMaxGasto}
-                  onChangeText={setDineroMaxGasto}
+                  onChangeText={t => setDineroMaxGasto(formatMoneyInput(t))}
                   keyboardType="numeric"
-                  placeholder="0"
+                  placeholder="$ 0"
                   placeholderTextColor={apple.colors.tertiaryLabel}
                 />
               </View>
@@ -230,7 +231,7 @@ export const UserModal = ({ visible, onClose, onSave, editingUser = null }) => {
                 <TextInput
                   style={styles.input}
                   value={maxCuotas}
-                  onChangeText={setMaxCuotas}
+                  onChangeText={t => setMaxCuotas(cleanMoneyValue(t))}
                   keyboardType="numeric"
                   placeholder="30"
                   placeholderTextColor={apple.colors.tertiaryLabel}
