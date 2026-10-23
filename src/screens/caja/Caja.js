@@ -27,7 +27,12 @@ export default function CajaScreen() {
       setCaja(actual);
       setMovimientos(actual ? await getMovimientosCaja(actual.id, 50, 0) : []);
       setHistorial((await getHistorialCajas(20, 0)) || []);
-    } catch (e) { appAlert('Error', e.message); } finally { setLoading(false); setRefreshing(false); }
+    } catch (e) {
+      console.log('Caja load error:', e);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -127,27 +132,27 @@ export default function CajaScreen() {
               <View style={[styles.card, { padding: 16 }]}>
                 <View style={styles.cajaTop}>
                   <View style={styles.badgeLive}><View style={styles.dot} /><Text style={styles.liveText}>ABIERTA</Text></View>
-                  <Text style={styles.cajaDate}>{new Date(caja.fecha_apertura).toLocaleString()}</Text>
+                  <Text style={styles.cajaDate}>{caja.fecha_apertura || caja.fecha ? new Date(caja.fecha_apertura || caja.fecha).toLocaleString() : ''}</Text>
                 </View>
                 <View style={styles.saldoRow}>
                   <View style={styles.saldoBox}><Text style={styles.saldoLabel}>Inicial</Text><Text style={styles.saldoVal}>{FormatMoneyDecimales(caja.saldo_inicial)}</Text></View>
                   <View style={styles.saldoBox}><Text style={styles.saldoLabel}>Final (calc)</Text><Text style={[styles.saldoVal, { color: apple.colors.blue }]}>{FormatMoneyDecimales(caja.saldo_final || 0)}</Text></View>
                 </View>
-                <Text style={styles.cajaId}>ID {caja.id.slice(0, 8)}…</Text>
+                <Text style={styles.cajaId}>ID {String(caja.id || '').slice(0, 8)}…</Text>
                 <TouchableOpacity style={styles.closeBtn} onPress={handleCerrar}><Icon name="power-off" size={14} color="#fff" /><Text style={styles.closeText}>  Cerrar caja</Text></TouchableOpacity>
               </View>
             </View>
             <View style={styles.listHeader}><Text style={styles.listTitle}>Movimientos · {movimientos.length}</Text><TouchableOpacity onPress={load}><Icon name="refresh" size={14} color={apple.colors.blue} /></TouchableOpacity></View>
-            <FlatList data={movimientos} keyExtractor={i => i.id} renderItem={Row} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={apple.colors.blue} />} ListEmptyComponent={<Text style={styles.emptySub}>Sin movimientos. Crea uno en Movimientos.</Text>} contentContainerStyle={{ paddingBottom: 20 }} />
+            <FlatList data={movimientos} keyExtractor={i => String(i.id)} renderItem={Row} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={apple.colors.blue} />} ListEmptyComponent={<Text style={styles.emptySub}>Sin movimientos. Crea uno en Movimientos.</Text>} contentContainerStyle={{ paddingBottom: 20 }} />
           </>
         )
       ) : (
         <FlatList
-          data={historial} keyExtractor={i => i.id} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          data={historial} keyExtractor={i => String(i.id)} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
           renderItem={({ item }) => (
             <View style={styles.row}>
               <View style={[styles.badge, { backgroundColor: item.estado === 'abierta' ? apple.colors.success + '18' : apple.colors.fill }]}><Icon name={item.estado === 'abierta' ? 'unlock' : 'lock'} size={13} color={item.estado === 'abierta' ? apple.colors.success : apple.colors.tertiaryLabel} /></View>
-              <View style={{ flex: 1 }}><Text style={styles.rowTitle}>{item.estado.toUpperCase()} · {FormatMoneyDecimales(item.saldo_inicial)} → {FormatMoneyDecimales(item.saldo_final)}</Text><Text style={styles.rowSub}>{new Date(item.fecha_apertura).toLocaleDateString()}{item.fecha_cierre ? ' · ' + new Date(item.fecha_cierre).toLocaleDateString() : ''}</Text></View>
+              <View style={{ flex: 1 }}><Text style={styles.rowTitle}>{item.estado.toUpperCase()} · {FormatMoneyDecimales(item.saldo_inicial)} → {FormatMoneyDecimales(item.saldo_final)}</Text><Text style={styles.rowSub}>{new Date(item.fecha_apertura || item.fecha || Date.now()).toLocaleDateString()}{item.fecha_cierre ? ' · ' + new Date(item.fecha_cierre).toLocaleDateString() : ''}</Text></View>
             </View>
           )}
           ListEmptyComponent={<Text style={styles.emptySub}>Sin historial</Text>}

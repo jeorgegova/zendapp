@@ -2,6 +2,16 @@ import { enablePromise, openDatabase } from 'react-native-sqlite-storage';
 
 enablePromise(true);
 
+async function ensureColumnExists(db, table, column, colType = 'TEXT') {
+  try {
+    const info = await getData(db, `PRAGMA table_info(${table})`);
+    const exists = info && info.some(col => col.name && col.name.toLowerCase() === column.toLowerCase());
+    if (!exists) {
+      await db.executeSql(`ALTER TABLE ${table} ADD COLUMN ${column} ${colType}`);
+    }
+  } catch {}
+}
+
 export async function ensureDatabaseIntegrity(db) {
   try {
     await db.executeSql(`CREATE TABLE IF NOT EXISTS consecutivoTramitado (id INTEGER PRIMARY KEY, valor INTEGER)`);
@@ -13,6 +23,55 @@ export async function ensureDatabaseIntegrity(db) {
       estado TEXT DEFAULT 'pendiente',
       created_at TEXT
     )`);
+
+    // Asegurar estructura de tablas cajas y movimientos
+    await db.executeSql(`CREATE TABLE IF NOT EXISTS cajas (
+      id TEXT PRIMARY KEY,
+      estado TEXT,
+      saldo_inicial REAL,
+      saldo_final REAL,
+      fecha_apertura TEXT,
+      fecha_cierre TEXT,
+      usuario_id TEXT,
+      fecha TEXT
+    )`);
+
+    await db.executeSql(`CREATE TABLE IF NOT EXISTS movimientos (
+      id TEXT PRIMARY KEY,
+      tipo TEXT,
+      descripcion TEXT,
+      monto REAL,
+      fecha TEXT,
+      horaDispositivo TEXT,
+      idCaja TEXT,
+      caja_id TEXT,
+      estadoMovil TEXT
+    )`);
+
+    // Asegurar columnas en cajas
+    await ensureColumnExists(db, 'cajas', 'usuario_id', 'TEXT');
+    await ensureColumnExists(db, 'cajas', 'fecha_cierre', 'TEXT');
+    await ensureColumnExists(db, 'cajas', 'fecha_apertura', 'TEXT');
+    await ensureColumnExists(db, 'cajas', 'saldo_inicial', 'REAL');
+    await ensureColumnExists(db, 'cajas', 'saldo_final', 'REAL');
+    await ensureColumnExists(db, 'cajas', 'estado', 'TEXT');
+    await ensureColumnExists(db, 'cajas', 'fecha', 'TEXT');
+
+    // Asegurar columnas en movimientos
+    await ensureColumnExists(db, 'movimientos', 'caja_id', 'TEXT');
+    await ensureColumnExists(db, 'movimientos', 'idCaja', 'TEXT');
+    await ensureColumnExists(db, 'movimientos', 'estadoMovil', 'TEXT');
+    await ensureColumnExists(db, 'movimientos', 'fecha', 'TEXT');
+    await ensureColumnExists(db, 'movimientos', 'horaDispositivo', 'TEXT');
+    await ensureColumnExists(db, 'movimientos', 'tipo', 'TEXT');
+    await ensureColumnExists(db, 'movimientos', 'monto', 'REAL');
+    await ensureColumnExists(db, 'movimientos', 'descripcion', 'TEXT');
+
+    // Eliminar índices únicos restrictivos que impiden pagos parciales o múltiples pagos por factura
+    try { await db.executeSql(`DROP INDEX IF EXISTS index_pago`); } catch {}
+    try { await db.executeSql(`DROP INDEX IF EXISTS index_detalles`); } catch {}
+    try { await db.executeSql(`CREATE INDEX IF NOT EXISTS idx_pagos_idFactura ON pagos(idFactura)`); } catch {}
+    try { await db.executeSql(`CREATE INDEX IF NOT EXISTS idx_detalles_facturaId ON detallesCaja(facturaId)`); } catch {}
 
     const paramRows = await getData(db, `SELECT COUNT(*) as c FROM parametrizacion`);
     if (!paramRows || !paramRows[0] || paramRows[0].c === 0) {
@@ -32,13 +91,21 @@ export async function ensureDatabaseIntegrity(db) {
   }
 }
 
+let dbInstance = null;
+let dbInitPromise = null;
+
 export async function getDbConnection() {
-  const db = openDatabase({
-    name: 'Zendapp.db',
-    createFromLocation: 1,
-  });
-  ensureDatabaseIntegrity(db).catch(() => {});
-  return db;
+  if (!dbInstance) {
+    dbInstance = openDatabase({
+      name: 'Zendapp.db',
+      createFromLocation: 1,
+    });
+  }
+  if (!dbInitPromise) {
+    dbInitPromise = ensureDatabaseIntegrity(dbInstance);
+  }
+  await dbInitPromise;
+  return dbInstance;
 }
 
 export async function createTables(db) {
@@ -301,7 +368,7 @@ export async function insertTables(db, table, data) {
   /* console.log("insertTables ", data); */
   const campos = Object.keys(data[0])
   const strcampos = campos.toString()
-  let scriptInsert = `INSERT INTO ${table} (${strcampos})`;
+  let scriptInsert = `INSERT OR REPLACE INTO ${table} (${strcampos})`;
   let scriptValues = ' VALUES ';
   for (let index = 0; index < data.length; index++) {
     const element = data[index];

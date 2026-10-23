@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, FlatList, TextInput, ActivityIndicator, TouchableOpacity, Animated, BackHandler, Alert, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, SafeAreaView, FlatList, TextInput, ActivityIndicator, TouchableOpacity, Animated, BackHandler, Alert, RefreshControl, Dimensions, Platform } from 'react-native';
 import { useFocusEffect, useNavigation, useNavigationState } from '@react-navigation/native';
 import Modal from 'react-native-modal';
 import Icon from 'react-native-vector-icons/FontAwesome';
@@ -11,56 +11,122 @@ import { apple } from '../../theme/appleTheme';
 import { appAlert } from '../../components/AppAlert';
 import { useAuth } from '../../context/AuthContext';
 import { getCajaActual, cerrarCaja } from '../../services/cajaService';
-import { SyncWithSupabase } from '../../utils/sync';
+import { SyncWithSupabase, SyncCajaAndMovimientos } from '../../utils/sync';
 import { clearAllLocalData } from '../../utils/clearLocal';
 import { getInvoice } from '../../services/services';
 import { supabase } from '../../lib/supabase';
 
-
-
 const mapPaymentType = (id) => ({ 1: 'MENSUAL', 2: 'SEMANAL', 3: 'QUINCENAL' }[id] || '—');
-const normalizeClient = (item, clientsByDoc = {}) => {
+const normalizeClient = (item, clientsByDoc = {}, latestPagoByFactura = {}) => {
   const telFromRow = (item.telefono || item.celular || '').trim();
   const telFromClients = item.documento ? (clientsByDoc[item.documento] || '') : '';
+  const isActualizado = (item.status || '').toLowerCase().trim() === 'actualizado';
+  const p = latestPagoByFactura[String(item.id)];
+
+  let tipoTramitado = null;
+  let valorPagado = 0;
+  let pendienteSync = false;
+
+  if (p) {
+    const v = Number(p.valor) || 0;
+    valorPagado = v;
+    if (p.tipo === 'nopago' || (p.tipo === 'pago' && v === 0)) {
+      tipoTramitado = 'NO PAGO';
+    } else if (p.tipo === 'parcial') {
+      tipoTramitado = 'PARCIAL';
+    } else {
+      tipoTramitado = 'PAGO';
+    }
+    // Si estadoMovil es 'sincronizado', pendienteSync es false (2 chulitos).
+    // Si estadoMovil !== 'sincronizado' y tiene id negativo local, pendienteSync es true (1 chulito).
+    pendienteSync = (p.estadoMovil !== 'sincronizado' && Number(p.id) < 0);
+  } else if (isActualizado) {
+    tipoTramitado = 'PAGO';
+    pendienteSync = false;
+  }
+
   return {
-    id: item.id, name: (item.name?.trim() || 'Sin nombre'), address: (item.address?.trim() || 'Sin dirección'),
-    amount: Number(item.amount) || 0, status: (item.status || '').toUpperCase().trim(),
-    estadoPago: (item.estadoPago || '').toLowerCase().trim(), estadoMovil: (item.status || '').toLowerCase().trim(),
-    paymentType: mapPaymentType(item.paymentType), time: item.time || '—', saldo: Number(item.saldo) || 0,
-    cuotasPagas: Number(item.cuotasPagas) || 0, saldoVencido: Number(item.saldoVencido) || 0,
-    nombreUno: item.nombreUno?.trim() || '', apellidoUno: item.apellidoUno?.trim() || '',
+    id: item.id,
+    name: (item.name?.trim() || 'Sin nombre'),
+    address: (item.address?.trim() || 'Sin dirección'),
+    amount: Number(item.amount) || 0,
+    status: (item.status || '').toUpperCase().trim(),
+    estadoPago: (item.estadoPago || '').toLowerCase().trim(),
+    estadoMovil: (item.status || '').toLowerCase().trim(),
+    paymentType: mapPaymentType(item.paymentType),
+    time: item.time || '—',
+    saldo: Number(item.saldo) || 0,
+    cuotasPagas: Number(item.cuotasPagas) || 0,
+    saldoVencido: Number(item.saldoVencido) || 0,
+    nombreUno: item.nombreUno?.trim() || '',
+    apellidoUno: item.apellidoUno?.trim() || '',
     telefono: (telFromRow || telFromClients).trim(),
     latitud: item.latitud != null && item.latitud !== '' ? Number(item.latitud) : null,
     longitud: item.longitud != null && item.longitud !== '' ? Number(item.longitud) : null,
     documento: (item.documento || '').trim(),
     valorCredito: Number(item.valorInicial || item.valorCredito || 0) || 0,
+    tipoTramitado,
+    valorPagado,
+    pendienteSync,
   };
 };
 
 const loadClientsFromDB = async () => {
   const db = await getDbConnection();
+  const caja = await getCajaActual();
+  const cajaId = caja?.id || null;
   const data = await getData(
     db,
-    `SELECT id, nombreUno || ' ' || COALESCE(apellidoUno, '') AS name, direccion AS address, valorCuota AS amount, estadoMovil AS status, estado AS estadoPago, paymentTermId AS paymentType, strftime('%H:%M', fecha) AS time, saldo, cuotasPagas, saldoVencido, nombreUno, apellidoUno, celular, documento, latitud, longitud, valorInicial FROM facturas WHERE estadoMovil IS NOT NULL AND (saldo > 0 OR id IN (SELECT idFactura FROM pagos WHERE date(substr(horaDispositivo,1,10)) = date('now','localtime')))`
+    `SELECT id, nombreUno || ' ' || COALESCE(apellidoUno, '') AS name, direccion AS address, valorCuota AS amount, estadoMovil AS status, estado AS estadoPago, paymentTermId AS paymentType, strftime('%H:%M', fecha) AS time, saldo, cuotasPagas, saldoVencido, nombreUno, apellidoUno, celular, documento, latitud, longitud, valorInicial FROM facturas WHERE estadoMovil IS NOT NULL AND ((estadoMovil = 'pendiente' AND saldo > 0) OR estadoMovil = 'actualizado' OR id IN (SELECT idFactura FROM pagos WHERE (idCaja = ? OR date(substr(horaDispositivo,1,10)) = date('now','localtime'))))`,
+    [cajaId || '']
   );
   let clientsByDoc = {};
   try {
     const clientsRows = await getData(db, `SELECT documento, telefono FROM clients`);
     if (clientsRows) for (const c of clientsRows) if (c.documento) clientsByDoc[c.documento] = c.telefono || '';
   } catch { }
-  return data.map(i => normalizeClient(i, clientsByDoc));
+
+  // Cargar pagos locales para mapear trámite y sincronización en 1 sola consulta
+  let latestPagoByFactura = {};
+  try {
+    const pagosRows = await getData(
+      db,
+      `SELECT idFactura, tipo, valor, estadoMovil, id, horaDispositivo FROM pagos ORDER BY horaDispositivo ASC, rowid ASC`
+    );
+    if (pagosRows) {
+      for (const p of pagosRows) {
+        if (p.idFactura) {
+          latestPagoByFactura[String(p.idFactura)] = p;
+        }
+      }
+    }
+  } catch (errPagos) {
+    console.log('Error loading pagos in loadClientsFromDB:', errPagos);
+  }
+
+  return data.map(i => normalizeClient(i, clientsByDoc, latestPagoByFactura));
 };
 
 const calculateStats = async (clients) => {
   const db = await getDbConnection();
-  // Sumar pagos del dia desde la tabla 'pagos' (SQLite local)
+  const caja = await getCajaActual();
+  const cajaId = caja?.id || null;
   let collected = 0;
   try {
-    const pagos = await getData(db, `SELECT SUM(CAST(valor AS REAL)) as total FROM pagos WHERE tipo != 'nopago' AND date(substr(horaDispositivo,1,10)) = date('now','localtime')`);
+    let q = `SELECT SUM(CAST(valor AS REAL)) as total FROM pagos WHERE tipo != 'nopago'`;
+    let p = [];
+    if (cajaId) {
+      q += ` AND (idCaja = ? OR date(substr(horaDispositivo,1,10)) = date('now','localtime'))`;
+      p.push(cajaId);
+    } else {
+      q += ` AND date(substr(horaDispositivo,1,10)) = date('now','localtime')`;
+    }
+    const pagos = await getData(db, q, p);
     collected = Number(pagos[0]?.total || 0);
   } catch { collected = 0; }
   const processed = clients.filter(c => c.estadoMovil === 'actualizado');
-  const pendingAmount = clients.reduce((s, c) => s + c.amount, 0);
+  const pendingClients = clients.filter(c => c.estadoMovil === 'pendiente');
+  const pendingAmount = pendingClients.reduce((s, c) => s + c.amount, 0);
   const totalVisits = clients.length;
   const progress = totalVisits > 0 ? Math.round((processed.length / totalVisits) * 100) : 0;
   return { pending: totalVisits, processed: processed.length, pendingAmount, collected, progress };
@@ -77,35 +143,30 @@ export default function Payments() {
   const [refreshing, setRefreshing] = useState(false);
   const [showLogout, setShowLogout] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [segmentWidth, setSegmentWidth] = useState(0);
 
-  // Animaciones de traslación
+  // Animaciones 100% nativas en GPU (0 lag, 0 consumo innecesario)
   const slideAnim = useRef(new Animated.Value(0)).current; // 0 = pendiente, 1 = tramitados
-  const listTranslateX = useRef(new Animated.Value(0)).current;
   const listOpacity = useRef(new Animated.Value(1)).current;
 
   const handleTabChange = (pending) => {
     if (showPending === pending) return;
 
-    // Animar indicador segmentado
+    // 1. Mover indicador con resorte nativo en GPU (100% fluido)
     Animated.spring(slideAnim, {
       toValue: pending ? 0 : 1,
-      useNativeDriver: false,
-      friction: 8,
-      tension: 50,
+      useNativeDriver: true,
+      friction: 9,
+      tension: 65,
     }).start();
 
-    // Animar transición de lista con traslación suave
-    const direction = pending ? 30 : -30;
-    Animated.sequence([
-      Animated.parallel([
-        Animated.timing(listTranslateX, { toValue: direction, duration: 100, useNativeDriver: true }),
-        Animated.timing(listOpacity, { toValue: 0, duration: 100, useNativeDriver: true }),
-      ]),
-      Animated.parallel([
-        Animated.timing(listTranslateX, { toValue: 0, duration: 150, useNativeDriver: true }),
-        Animated.timing(listOpacity, { toValue: 1, duration: 150, useNativeDriver: true }),
-      ]),
-    ]).start();
+    // 2. Transición suave y estable de la lista sin parpadeos ni tirones
+    listOpacity.setValue(0.75);
+    Animated.timing(listOpacity, {
+      toValue: 1,
+      duration: 160,
+      useNativeDriver: true,
+    }).start();
 
     setShowPending(pending);
   };
@@ -141,6 +202,7 @@ export default function Payments() {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
         await getInvoice(session.user.id, session.access_token);
+        await SyncCajaAndMovimientos();
       }
 
       const n = await loadClientsFromDB();
@@ -157,10 +219,12 @@ export default function Payments() {
 
   const filteredClients = useMemo(() => clients.filter(c => (showPending ? (c.estadoMovil === 'pendiente' && c.saldo > 0 && c.estadoPago !== 'cancel') : c.estadoMovil === 'actualizado') && c.name.toLowerCase().includes(searchText.toLowerCase())), [clients, showPending, searchText]);
 
-  // Interpolación de posición para el fondo animado del segment
-  const segmentLeft = slideAnim.interpolate({
+  // Interpolación de posición para el fondo animado del segment (acelerado por GPU)
+  const screenWidth = Dimensions.get('window').width;
+  const tabWidth = segmentWidth > 0 ? (segmentWidth - 6) / 2 : (screenWidth - 32 - 6) / 2;
+  const segTranslateX = slideAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: ['0%', '50%'],
+    outputRange: [0, tabWidth],
   });
 
   const handleLogout = async () => {
@@ -295,9 +359,15 @@ export default function Payments() {
           )}
         </View>
 
-        {/* Segmented control con traslación fluida */}
-        <View style={styles.segment}>
-          <Animated.View style={[styles.segActiveBg, { left: segmentLeft }]} />
+        {/* Segmented control con traslación fluida y nativa */}
+        <View
+          style={styles.segment}
+          onLayout={(e) => {
+            const w = e.nativeEvent.layout.width;
+            if (w > 0 && Math.abs(w - segmentWidth) > 1) setSegmentWidth(w);
+          }}
+        >
+          <Animated.View style={[styles.segActiveBg, { width: tabWidth, transform: [{ translateX: segTranslateX }] }]} />
           <TouchableOpacity activeOpacity={0.7} onPress={() => handleTabChange(true)} style={styles.segOpt}>
             <Icon name="clock-o" size={12} color={showPending ? apple.colors.label : apple.colors.secondaryLabel} />
             <Text style={[styles.segText, showPending && styles.segTextActive]}> Por visitar</Text>
@@ -318,12 +388,16 @@ export default function Payments() {
       {loading && clients.length === 0 ? (
         <View style={styles.center}><ActivityIndicator size="large" color={apple.colors.blue} /><Text style={styles.loadingText}>Cargando cartera…</Text></View>
       ) : (
-        <Animated.View style={{ flex: 1, transform: [{ translateX: listTranslateX }], opacity: listOpacity }}>
+        <Animated.View style={{ flex: 1, opacity: listOpacity }}>
           <FlatList
             style={{ flex: 1 }}
             contentContainerStyle={{ paddingBottom: 16, paddingTop: 6 }}
             data={filteredClients}
             keyExtractor={i => i.id.toString()}
+            initialNumToRender={10}
+            maxToRenderPerBatch={10}
+            windowSize={5}
+            removeClippedSubviews={Platform.OS === 'android'}
             refreshControl={
               <RefreshControl
                 refreshing={refreshing}
@@ -333,7 +407,31 @@ export default function Payments() {
               />
             }
             renderItem={({ item }) => (
-              <ItemPayments id={item.id} name={item.name} address={item.address} amount={item.amount} status={item.status} time={item.time} paymentType={item.paymentType} estadoPago={item.estadoPago} saldo={item.saldo} cuotasPagas={item.cuotasPagas} saldoVencido={item.saldoVencido} nombreUno={item.nombreUno} apellidoUno={item.apellidoUno} valorCuota={item.amount} estadoMovil={item.estadoMovil} telefono={item.telefono} latitud={item.latitud} longitud={item.longitud} valorCredito={item.valorCredito} onPaymentSuccess={loadClients} />
+              <ItemPayments
+                id={item.id}
+                name={item.name}
+                address={item.address}
+                amount={item.amount}
+                status={item.status}
+                time={item.time}
+                paymentType={item.paymentType}
+                estadoPago={item.estadoPago}
+                saldo={item.saldo}
+                cuotasPagas={item.cuotasPagas}
+                saldoVencido={item.saldoVencido}
+                nombreUno={item.nombreUno}
+                apellidoUno={item.apellidoUno}
+                valorCuota={item.amount}
+                estadoMovil={item.estadoMovil}
+                telefono={item.telefono}
+                latitud={item.latitud}
+                longitud={item.longitud}
+                valorCredito={item.valorCredito}
+                tipoTramitado={item.tipoTramitado}
+                valorPagado={item.valorPagado}
+                pendienteSync={item.pendienteSync}
+                onPaymentSuccess={loadClients}
+              />
             )}
             ListEmptyComponent={
               <View style={styles.empty}>
@@ -394,9 +492,14 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 3,
     bottom: 3,
-    width: '50%',
+    left: 3,
     backgroundColor: '#FFFFFF',
     borderRadius: 9,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 2,
   },
   segOpt: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 6, zIndex: 1 },
   segText: { fontSize: 12, fontWeight: '600', color: apple.colors.secondaryLabel },

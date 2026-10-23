@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { BackHandler, View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, ActivityIndicator, Alert, SafeAreaView, Modal, ScrollView } from 'react-native';
+import { BackHandler, View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, ActivityIndicator, Alert, SafeAreaView, Modal, ScrollView, RefreshControl } from 'react-native';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { getCajaActual } from '../../services/cajaService';
@@ -12,6 +12,7 @@ export default function MovementsScreen() {
   const [caja, setCaja] = useState(null);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
   const [filterTipo, setFilterTipo] = useState('todos');
   const [modalVisible, setModalVisible] = useState(false);
@@ -20,14 +21,24 @@ export default function MovementsScreen() {
   const [formMonto, setFormMonto] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (isRefresh = false) => {
+    if (!isRefresh) setLoading(true);
     try {
       const actual = await getCajaActual();
       setCaja(actual);
-      setItems((await listMovimientos({ cajaId: actual?.id || null, limit: 50, offset: 0 })) || []);
-    } catch (e) { appAlert('Error', e.message); } finally { setLoading(false); }
+      const movs = await listMovimientos({ cajaId: actual?.id || null, limit: 50, offset: 0 });
+      setItems(movs || []);
+    } catch (e) {
+      console.log('Movements load error:', e);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   }, []);
+  const onRefresh = () => {
+    setRefreshing(true);
+    load(true);
+  };
   useFocusEffect(useCallback(() => { load(); }, [load]));
   const navigation = useNavigation();
   useFocusEffect(
@@ -51,7 +62,15 @@ export default function MovementsScreen() {
   );
 
   const handleSearch = async () => {
-    try { setItems((await listMovimientos({ cajaId: caja?.id || null, limit: 50, offset: 0, search })) || []); } catch (e) { appAlert('Error', e.message); }
+    try {
+      setLoading(true);
+      const data = await listMovimientos({ cajaId: caja?.id || null, limit: 50, offset: 0, search });
+      setItems(data || []);
+    } catch (e) {
+      console.log('Movements search error:', e);
+    } finally {
+      setLoading(false);
+    }
   };
   const handleCreate = async () => {
     const monto = parseFloat(formMonto.replace(',', '.'));
@@ -75,7 +94,7 @@ export default function MovementsScreen() {
     return (
       <View style={styles.row}>
         <View style={[styles.badge, { backgroundColor: color + '15' }]}><Icon name={isIngreso ? 'plus' : 'minus'} size={11} color={color} /></View>
-        <View style={{ flex: 1 }}><Text style={styles.rowTitle}>{item.tipo.toUpperCase()} · {FormatMoneyDecimales(item.monto)}</Text><Text style={styles.rowSub} numberOfLines={1}>{item.descripcion || 'Sin descripción'}</Text><Text style={styles.rowDate}>{new Date(item.fecha).toLocaleString()}</Text></View>
+        <View style={{ flex: 1 }}><Text style={styles.rowTitle}>{item.tipo.toUpperCase()} · {FormatMoneyDecimales(item.monto)}</Text><Text style={styles.rowSub} numberOfLines={1}>{item.descripcion || 'Sin descripción'}</Text><Text style={styles.rowDate}>{new Date(item.fecha || Date.now()).toLocaleString()}</Text></View>
       </View>
     );
   };
@@ -84,7 +103,7 @@ export default function MovementsScreen() {
 
   return (
     <SafeAreaView style={styles.root}>
-      <View style={styles.header}><Text style={styles.headerTitle}>Movimientos</Text><Text style={styles.headerSub}>{caja ? `Caja ${caja.id.slice(0, 8)}…` : 'Sin caja abierta'}</Text></View>
+      <View style={styles.header}><Text style={styles.headerTitle}>Movimientos</Text><Text style={styles.headerSub}>{caja ? `Caja ${String(caja.id || '').slice(0, 8)}…` : 'Sin caja abierta'}</Text></View>
 
       <View style={styles.controls}>
         <View style={styles.searchRow}>
@@ -103,7 +122,14 @@ export default function MovementsScreen() {
         </ScrollView>
       </View>
 
-      <FlatList data={filtered} keyExtractor={i => i.id} renderItem={Row} ListEmptyComponent={<View style={styles.empty}><Icon name="inbox" size={28} color={apple.colors.separator} /><Text style={styles.emptyTitle}>Sin movimientos</Text></View>} contentContainerStyle={{ paddingBottom: 90 }} />
+      <FlatList
+        data={filtered}
+        keyExtractor={i => String(i.id)}
+        renderItem={Row}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={apple.colors.blue} />}
+        ListEmptyComponent={<View style={styles.empty}><Icon name="inbox" size={28} color={apple.colors.separator} /><Text style={styles.emptyTitle}>Sin movimientos</Text></View>}
+        contentContainerStyle={{ paddingBottom: 90 }}
+      />
 
       <TouchableOpacity style={[styles.fab, !caja && { backgroundColor: apple.colors.tertiaryLabel }]} onPress={() => caja ? setModalVisible(true) : appAlert('Caja cerrada', 'Abre caja en tab Caja para ingresos/retiros.')}>
         <Icon name="plus" size={18} color="#fff" />

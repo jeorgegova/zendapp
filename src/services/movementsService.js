@@ -1,8 +1,11 @@
 import { Platform, PermissionsAndroid } from 'react-native';
 import Geolocation from 'react-native-geolocation-service';
 import { request, PERMISSIONS, RESULTS } from 'react-native-permissions';
+import NetInfo from '@react-native-community/netinfo';
 import { getDbConnection, getData } from '../database/db';
 import { SyncWithSupabase } from '../utils/sync';
+import { supabase } from '../lib/supabase';
+import { saveMovimientoLocal } from './cajaService';
 
 async function ensureLocationPermission() {
   if (Platform.OS === 'android') {
@@ -43,8 +46,8 @@ export async function createCashMovement({ cajaId, tipo, descripcion, monto }) {
 
   // Guardar en SQLite local inmediatamente (Offline-First)
   await db.executeSql(
-    `INSERT INTO movimientos (id, descripcion, monto, horaDispositivo, tipo, estadoMovil, idCaja, fecha) VALUES (?, ?, ?, ?, ?, 'actualizado', ?, ?)`,
-    [tempId, descripcion?.trim() || '', val, nowIso, tipo, cajaId, nowIso]
+    `INSERT INTO movimientos (id, descripcion, monto, horaDispositivo, tipo, estadoMovil, idCaja, caja_id, fecha) VALUES (?, ?, ?, ?, ?, 'actualizado', ?, ?, ?)`,
+    [tempId, descripcion?.trim() || '', val, nowIso, tipo, cajaId, cajaId, nowIso]
   );
 
   // Actualizar saldo_final local de la caja
@@ -65,25 +68,108 @@ export async function createCashMovement({ cajaId, tipo, descripcion, monto }) {
 }
 
 export async function listMovimientos({ cajaId, limit = 50, offset = 0, search = '' }) {
+  let targetCajaId = cajaId;
   const db = await getDbConnection();
-  let sql = `SELECT id, tipo, descripcion, monto, COALESCE(horaDispositivo, fecha) AS fecha, idCaja AS caja_id, estadoMovil FROM movimientos WHERE 1=1`;
-  const params = [];
-  if (cajaId) {
-    sql += ` AND idCaja = ?`;
-    params.push(cajaId);
-  }
-  if (search) {
-    sql += ` AND descripcion LIKE ?`;
-    params.push(`%${search}%`);
-  }
-  sql += ` ORDER BY COALESCE(horaDispositivo, fecha) DESC LIMIT ? OFFSET ?`;
-  params.push(limit, offset);
 
+  // 1. Si hay red, consultar Supabase cash_movements (Online)
   try {
+    const net = await NetInfo.fetch();
+    if (net.isConnected) {
+      let q = supabase
+        .from('cash_movements')
+        .select('id, tipo, descripcion, monto, fecha, caja_id')
+        .order('fecha', { ascending: false })
+        .range(offset, offset + limit - 1);
+
+      if (targetCajaId) {
+        q = q.eq('caja_id', targetCajaId);
+      }
+      if (search && search.trim()) {
+        q = q.ilike('descripcion', `%${search.trim()}%`);
+      }
+
+      const { data: serverMovements, error } = await q;
+
+      if (!error && serverMovements) {
+        // Traer pendientes locales
+        let localPending = [];
+        try {
+          let localSql = `SELECT id, tipo, descripcion, monto, COALESCE(horaDispositivo, fecha) AS fecha, COALESCE(caja_id, idCaja) AS caja_id, estadoMovil FROM movimientos WHERE (id < 0 OR estadoMovil = 'actualizado')`;
+          const params = [];
+          if (targetCajaId) {
+            localSql += ` AND (idCaja = ? OR caja_id = ?)`;
+            params.push(String(targetCajaId), String(targetCajaId));
+          }
+          if (search && search.trim()) {
+            localSql += ` AND descripcion LIKE ?`;
+            params.push(`%${search.trim()}%`);
+          }
+          localSql += ` ORDER BY COALESCE(horaDispositivo, fecha) DESC`;
+          localPending = (await getData(db, localSql, params)) || [];
+        } catch {}
+
+        // Cachear movimientos del servidor en SQLite con estado 'sincronizado'
+        for (const sm of serverMovements) {
+          await saveMovimientoLocal(db, sm, sm.caja_id || targetCajaId, 'sincronizado');
+        }
+
+        // Limpiar temporales locales que ya existen en el servidor
+        for (const sm of serverMovements) {
+          try {
+            await db.executeSql(
+              `DELETE FROM movimientos WHERE id < 0 AND tipo = ? AND monto = ? AND descripcion = ?`,
+              [sm.tipo, Number(sm.monto), sm.descripcion || '']
+            );
+          } catch {}
+        }
+
+        const serverIds = new Set(serverMovements.map(m => String(m.id)));
+        const filteredPending = localPending.filter(p => !serverIds.has(String(p.id)));
+
+        return [...filteredPending, ...serverMovements];
+      }
+    }
+  } catch (netErr) {
+    console.log('listMovimientos: red no disponible o error servidor, usando SQLite local:', netErr);
+  }
+
+  // 2. MODO OFFLINE / Fallback a SQLite local
+  try {
+    let sql = `SELECT id, tipo, descripcion, monto, COALESCE(horaDispositivo, fecha) AS fecha, COALESCE(caja_id, idCaja) AS caja_id, estadoMovil FROM movimientos WHERE 1=1`;
+    const params = [];
+    if (targetCajaId) {
+      sql += ` AND (idCaja = ? OR caja_id = ?)`;
+      params.push(String(targetCajaId), String(targetCajaId));
+    }
+    if (search && search.trim()) {
+      sql += ` AND descripcion LIKE ?`;
+      params.push(`%${search.trim()}%`);
+    }
+    sql += ` ORDER BY COALESCE(horaDispositivo, fecha) DESC LIMIT ? OFFSET ?`;
+    params.push(limit, offset);
+
     const rows = await getData(db, sql, params);
-    return rows || [];
+    if (rows && rows.length > 0) return rows;
   } catch (err) {
-    console.log('listMovimientos error', err);
+    console.log('listMovimientos local query error:', err);
+  }
+
+  // 3. Fallback seguro sin columna caja_id si hubo incompatibilidad
+  try {
+    let simpleSql = `SELECT id, tipo, descripcion, monto, COALESCE(horaDispositivo, fecha) AS fecha, idCaja, estadoMovil FROM movimientos WHERE 1=1`;
+    const sParams = [];
+    if (targetCajaId) {
+      simpleSql += ` AND idCaja = ?`;
+      sParams.push(String(targetCajaId));
+    }
+    if (search && search.trim()) {
+      simpleSql += ` AND descripcion LIKE ?`;
+      sParams.push(`%${search.trim()}%`);
+    }
+    simpleSql += ` ORDER BY COALESCE(horaDispositivo, fecha) DESC LIMIT ? OFFSET ?`;
+    sParams.push(limit, offset);
+    return (await getData(db, simpleSql, sParams)) || [];
+  } catch {
     return [];
   }
 }

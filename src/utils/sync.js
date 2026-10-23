@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { Alert } from 'react-native';
 import Toast from 'react-native-toast-message';
 import { appAlert } from '../components/AppAlert';
+import { saveCajaLocal, saveMovimientoLocal } from '../services/cajaService';
 
 let globalSyncCollection = [];
 let idCounter = -1;
@@ -30,16 +31,18 @@ export const SyncWithSupabase = async (toas = true, callLoading = () => { }) => 
     idCounter = -1;
     idMapping.clear();
 
-    const okVentas = await SendVentas(toas);
-    if (!okVentas) return callLoading(false);
-
-    const okPay = await SendPay(toas);
-    if (!okPay) return callLoading(false);
-
-    const okMov = await SendMovimientos(toas);
-    if (!okMov) return callLoading(false);
-
+    await SendVentas(toas);
+    await SendPay(toas);
+    await SendMovimientos(toas);
     const res = await sendCollectedItems(toas);
+
+    // Sincronizar y almacenar en local la caja y los movimientos con su estado correspondiente
+    try {
+      await SyncCajaAndMovimientos();
+    } catch (eCaja) {
+      console.log('SyncCajaAndMovimientos error en SyncWithSupabase:', eCaja);
+    }
+
     return callLoading(res);
   } catch (e) {
     console.log('Sync error', e);
@@ -175,7 +178,12 @@ const SendMovimientos = async (toas) => {
 
 const addToSyncCollection = (item, originalId, type) => {
   const tempId = idCounter--;
-  idMapping.set(originalId, { originalId, type });
+  const info = { originalId, type, idFactura: item.detalle?.idFactura };
+  idMapping.set(originalId, info);
+  idMapping.set(String(originalId), info);
+  if (typeof originalId === 'string' && !isNaN(Number(originalId))) {
+    idMapping.set(Number(originalId), info);
+  }
   globalSyncCollection.push(item);
   return tempId;
 };
@@ -190,6 +198,7 @@ const sendCollectedItems = async (toas) => {
   try {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) throw new Error('No autenticado');
+    const db = await getDbConnection();
 
     // 1 intento: Edge Function bulk_sync (si existe) sino loop por item
     // Fallback loop
@@ -206,51 +215,80 @@ const sendCollectedItems = async (toas) => {
             const { data: inv } = await supabase.from('invoice').select('client_id').eq('id', item.detalle.idFactura).single();
             clientId = inv?.client_id || null;
           } catch { }
+          if (!clientId) {
+            try {
+              const f = await getData(db, `SELECT partnerId FROM facturas WHERE id = ?`, [item.detalle.idFactura]);
+              clientId = f?.[0]?.partnerId || null;
+            } catch {}
+          }
           try {
             const { data: caja } = await supabase.from('cajas').select('id').eq('usuario_id', session.user.id).eq('estado', 'abierta').order('fecha_apertura', { ascending: false }).limit(1).maybeSingle();
             cajaId = caja?.id || null;
           } catch { }
+          if (!cajaId) {
+            try {
+              const { getCajaActual } = require('../services/cajaService');
+              const c = await getCajaActual();
+              cajaId = c?.id || null;
+            } catch {}
+          }
 
           if (!clientId) throw new Error('No se pudo obtener client_id de la factura');
           if (!cajaId) throw new Error('No hay caja abierta para el usuario');
 
-          // nopago no debe crear pago: monto 0, lo marcamos como sincronizado local sin llamar RPC
-          if (item.detalle.tipo === 'nopago') {
-            // nopago: registrar con amount 0 para conteo, sin movimiento caja (RPC exige >0)
-            const { data: pay, error: ePay } = await supabase
-              .from('payments')
-              .insert([{
-                invoice_id: item.detalle.idFactura,
-                client_id: clientId,
-                amount: 0,
-                payment_date: new Date().toISOString().slice(0, 10),
-                method: 'nopago',
-                cash_movement_id: null,
-              }])
-              .select()
-              .single();
-            if (ePay) throw ePay;
-            results.push({ idv: item.id, idn: pay.id, ok: true });
-            continue;
-          }
-          if (Number(item.detalle.valor) === 0) {
-            results.push({ idv: item.id, idn: item.id, ok: true });
+          // nopago: registrar visita sin recaudo (monto 0)
+          if (item.detalle.tipo === 'nopago' || Number(item.detalle.valor) === 0) {
+            try {
+              const { data: pay, error: ePay } = await supabase
+                .from('payments')
+                .insert([{
+                  invoice_id: item.detalle.idFactura,
+                  client_id: clientId,
+                  amount: 0,
+                  payment_date: new Date().toISOString().slice(0, 10),
+                  method: 'nopago',
+                  cash_movement_id: null,
+                }])
+                .select('id')
+                .maybeSingle();
+
+              if (!ePay && pay) {
+                results.push({ idv: item.id, idn: pay.id, ok: true });
+                continue;
+              }
+            } catch (nopagoErr) {
+              console.log('Error insertando nopago directo:', nopagoErr);
+            }
+
+            // Fallback RPC create_payment con amount 0
+            const { data: rpcId, error: rpcErr } = await supabase.rpc('create_payment', {
+              p_invoice_id: item.detalle.idFactura,
+              p_client_id: clientId,
+              p_amount: 0,
+              p_payment_date: new Date().toISOString().slice(0, 10),
+              p_method: 'nopago',
+              p_caja_id: cajaId,
+            });
+            if (rpcErr) throw rpcErr;
+            results.push({ idv: item.id, idn: rpcId, ok: true });
             continue;
           }
 
+          const valNum = parseFloat(item.detalle.valor) || 0;
           const pMethod = item.detalle.tipo === 'parcial' ? 'parcial' : 'cash';
           const pDate = new Date().toISOString().slice(0, 10);
 
           const { data, error } = await supabase.rpc('create_payment', {
             p_invoice_id: item.detalle.idFactura,
             p_client_id: clientId,
-            p_amount: item.detalle.valor,
+            p_amount: valNum,
             p_payment_date: pDate,
             p_method: pMethod,
             p_caja_id: cajaId,
           });
 
           if (error) throw error;
+          results.push({ idv: item.id, idn: data, ok: true });
         } else if (mapping.type === 'movimiento') {
           let targetCajaId = item.detalle.idCaja || null;
           if (!targetCajaId) {
@@ -339,23 +377,123 @@ const sendCollectedItems = async (toas) => {
 const processResponseAndUpdateTables = async (response) => {
   const db = await getDbConnection();
   for (const item of response) {
-    const mapping = idMapping.get(item.idv);
+    const mapping = idMapping.get(item.idv)
+      || idMapping.get(String(item.idv))
+      || (typeof item.idv === 'string' && !isNaN(Number(item.idv)) ? idMapping.get(Number(item.idv)) : null);
     if (!mapping) continue;
     if (mapping.type === 'payment') {
+      const facturaId = mapping.idFactura || item.factura;
       try {
-        await db.executeSql(`UPDATE pagos SET estadoMovil = 'sincronizado' WHERE id = ?`, [item.idv]);
-      } catch {
-        await updateData(db, 'pagos', { id: item.idv, estadoMovil: 'sincronizado' });
+        await db.executeSql(
+          `UPDATE pagos SET estadoMovil = 'sincronizado' WHERE id = ? OR id = '' || ? OR (idFactura = ? AND estadoMovil IN ('enviando', 'actualizado'))`,
+          [item.idv, item.idv, facturaId || '']
+        );
+      } catch (err) {
+        console.log('Error updating pagos sincronizado:', err);
+        try { await updateData(db, 'pagos', { id: item.idv, estadoMovil: 'sincronizado' }); } catch {}
       }
       try {
-        await db.executeSql(`UPDATE detallesCaja SET estado = 'sincronizado' WHERE id = ?`, [item.idv]);
+        await db.executeSql(
+          `UPDATE detallesCaja SET estado = 'sincronizado' WHERE id = ? OR id = '' || ? OR (facturaId = ? AND estado != 'sincronizado')`,
+          [item.idv, item.idv, facturaId || '']
+        );
       } catch {}
       // guardar id remoto para referencia si existe columna sync_id
-      try { await db.executeSql(`UPDATE pagos SET sync_id = ? WHERE id = ?`, [item.idn, item.idv]); } catch {}
+      try { await db.executeSql(`UPDATE pagos SET sync_id = ? WHERE id = ? OR id = '' || ?`, [item.idn, item.idv, item.idv]); } catch {}
     } else if (mapping.type === 'movimiento') {
       try {
-        await db.executeSql(`UPDATE movimientos SET estadoMovil = 'sincronizado' WHERE id = ?`, [item.idv]);
+        if (item.idn) {
+          await db.executeSql(
+            `UPDATE movimientos SET id = ?, estadoMovil = 'sincronizado' WHERE id = ? OR id = '' || ?`,
+            [String(item.idn), item.idv, item.idv]
+          );
+        } else {
+          await db.executeSql(
+            `UPDATE movimientos SET estadoMovil = 'sincronizado' WHERE id = ? OR id = '' || ?`,
+            [item.idv, item.idv]
+          );
+        }
+      } catch (errMov) {
+        console.log('Error updating movimiento local sincronizado:', errMov);
+        try {
+          await db.executeSql(
+            `UPDATE movimientos SET estadoMovil = 'sincronizado' WHERE id = ? OR id = '' || ?`,
+            [item.idv, item.idv]
+          );
+        } catch {}
+      }
+    }
+  }
+};
+
+export const SyncCajaAndMovimientos = async () => {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user?.id) return;
+    const userId = session.user.id;
+    const db = await getDbConnection();
+
+    // 1. Obtener la caja activa del usuario en Supabase
+    const { data: caja, error: cajaErr } = await supabase
+      .from('cajas')
+      .select('*')
+      .eq('usuario_id', userId)
+      .eq('estado', 'abierta')
+      .order('fecha_apertura', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!cajaErr && caja) {
+      // Guardar / Actualizar caja activa en SQLite local con su estado 'abierta'
+      await saveCajaLocal(db, caja, userId);
+
+      // 2. Descargar todos los movimientos de esta caja desde Supabase
+      const { data: movements, error: movErr } = await supabase
+        .from('cash_movements')
+        .select('*')
+        .eq('caja_id', caja.id)
+        .order('fecha', { ascending: false });
+
+      if (!movErr && movements && movements.length > 0) {
+        for (const m of movements) {
+          await saveMovimientoLocal(db, m, caja.id, 'sincronizado');
+        }
+
+        // Limpiar cualquier movimiento local temporal ya sincronizado
+        for (const m of movements) {
+          try {
+            await db.executeSql(
+              `DELETE FROM movimientos WHERE id < 0 AND (idCaja = ? OR caja_id = ?) AND tipo = ? AND monto = ? AND descripcion = ?`,
+              [String(caja.id), String(caja.id), m.tipo, Number(m.monto), m.descripcion || '']
+            );
+          } catch {}
+        }
+      }
+    } else if (!cajaErr && !caja) {
+      // Si el servidor confirma que NO hay caja abierta, marcar como cerrada en SQLite
+      try {
+        await db.executeSql(`UPDATE cajas SET estado = 'cerrada' WHERE usuario_id = ?`, [userId]);
       } catch {}
     }
+
+    // 3. Cachear historial de las últimas 20 cajas para uso offline
+    try {
+      const { data: historialCajas } = await supabase
+        .from('cajas')
+        .select('id, estado, saldo_inicial, saldo_final, fecha_apertura, fecha_cierre, usuario_id')
+        .eq('usuario_id', userId)
+        .order('fecha_apertura', { ascending: false })
+        .limit(20);
+
+      if (historialCajas && historialCajas.length > 0) {
+        for (const hc of historialCajas) {
+          await saveCajaLocal(db, hc, userId);
+        }
+      }
+    } catch (eHist) {
+      console.log('Error cacheando historial de cajas:', eHist);
+    }
+  } catch (err) {
+    console.log('SyncCajaAndMovimientos error:', err);
   }
 };

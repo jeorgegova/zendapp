@@ -9,6 +9,7 @@ import {
     TextInput
 } from 'react-native';
 import Icon from 'react-native-vector-icons/FontAwesome';
+import { apple } from '../../theme/appleTheme';
 
 const CustomPicker = ({ data, selectedValue, onSelect, placeholder, visible, onClose }) => {
     const [searchText, setSearchText] = useState("")

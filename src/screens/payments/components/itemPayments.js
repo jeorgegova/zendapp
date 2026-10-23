@@ -7,58 +7,128 @@ import Toast from 'react-native-toast-message';
 import Geolocation from 'react-native-geolocation-service';
 import { getDbConnection, updateData, insertTables, getData } from '../../../database/db';
 import { IdInsertion, getDateOdooMilisec, getDate, Capitalize, FormatMoneyDecimales } from '../../../utils/utilities';
+import { getCajaActual } from '../../../services/cajaService';
 import { apple } from '../../../theme/appleTheme';
 import { appAlert } from '../../../components/AppAlert';
 
 const getStatusColor = (tipo) => ({ pago: apple.colors.success, 'no pago': apple.colors.danger, parcial: apple.colors.warning, pendiente: apple.colors.separator }[ (tipo||'').toLowerCase().trim()] || apple.colors.separator);
 const getStatusBg = (tipo) => ({ pago: '#E8F5E9', 'no pago': '#FFEBEE', parcial: '#FFF8E1', pendiente: apple.colors.fill }[ (tipo||'').toLowerCase().trim()] || apple.colors.fill);
 
-const getCurrentLocation = () => new Promise((res, rej) => Geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }));
+const getCurrentLocationSafe = () =>
+  new Promise((res) => {
+    try {
+      Geolocation.getCurrentPosition(
+        (pos) => res({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
+        (err) => {
+          console.log('Location error / fallback:', err);
+          res({ latitude: null, longitude: null });
+        },
+        { enableHighAccuracy: false, timeout: 5000, maximumAge: 30000 }
+      );
+    } catch {
+      res({ latitude: null, longitude: null });
+    }
+  });
+
 const buildPaymentData = async ({ tipo, valor, idFactura, nombre, secuencia }) => {
-  const pos = await getCurrentLocation();
+  const pos = await getCurrentLocationSafe();
   const idInsert = await IdInsertion();
   const currentDate = getDateOdooMilisec();
+  const caja = await getCajaActual();
+  const currentCajaId = caja?.id || '1';
   return {
-    pago: { id: idInsert, latitud: pos.coords.latitude, longitud: pos.coords.longitude, tipo, valor, horaDispositivo: currentDate, idFactura, valorFactura: valor, descripcion: '', estadoMovil: 'actualizado', nombre: Capitalize(nombre), secuencia_pago: secuencia, idCaja: 1 },
-    detalle: { id: idInsert, facturaId: idFactura, valor, fecha: getDate(), descripcion: '', tipo, hora_dispositivo: currentDate, nombre: Capitalize(nombre), [`${tipo === 'nopago' ? 'nopago' : 'pago'}_factura_venta_id`]: idFactura, editable: 'true' },
+    pago: {
+      id: idInsert,
+      latitud: pos.latitude,
+      longitud: pos.longitude,
+      tipo,
+      valor,
+      horaDispositivo: currentDate,
+      idFactura,
+      valorFactura: valor,
+      descripcion: '',
+      estadoMovil: 'actualizado',
+      nombre: Capitalize(nombre),
+      secuencia_pago: secuencia,
+      idCaja: currentCajaId,
+    },
+    detalle: {
+      id: idInsert,
+      facturaId: idFactura,
+      valor,
+      fecha: getDate(),
+      descripcion: '',
+      tipo,
+      hora_dispositivo: currentDate,
+      nombre: Capitalize(nombre),
+      [`${tipo === 'nopago' ? 'nopago' : 'pago'}_factura_venta_id`]: `${idFactura}_${idInsert}`,
+      editable: 'true',
+    },
   };
 };
 const getAndIncrementConsecutivo = async (db) => {
-  const r = await getData(db, 'SELECT valor FROM consecutivoTramitado WHERE id = 1');
-  if (!r.length) throw new Error('No existe consecutivoTramitado');
-  const next = parseInt(r[0].valor || 0) + 1;
-  await updateData(db, 'consecutivoTramitado', { id: 1, valor: next });
+  let next = 1;
+  try {
+    const r = await getData(db, 'SELECT valor FROM consecutivoTramitado WHERE id = 1');
+    if (r && r.length > 0) {
+      next = parseInt(r[0].valor || 0) + 1;
+    }
+    await db.executeSql('INSERT OR REPLACE INTO consecutivoTramitado (id, valor) VALUES (1, ?)', [next]);
+  } catch {
+    next = 1;
+  }
   return next;
 };
 const updateFacturaWithConsecutivo = async (db, id, updates, c) => updateData(db, 'facturas', { ...updates, id, consecutivoTramitado: c });
 const getUltimoTramite = async (db, idFactura) => {
-  const r = await getData(db, `SELECT id, tipo, valor, estadoMovil FROM pagos WHERE idFactura = '${idFactura}' ORDER BY id DESC LIMIT 1`);
-  if (!r.length) return { tipo: null, valorPagado: 0, syncId: null, pendiente: false };
+  const r = await getData(
+    db,
+    `SELECT id, tipo, valor, estadoMovil FROM pagos WHERE idFactura = ? ORDER BY horaDispositivo DESC, rowid DESC LIMIT 1`,
+    [idFactura]
+  );
+  if (!r || !r.length) return { tipo: null, valorPagado: 0, syncId: null, pendiente: false };
   const v = Number(r[0].valor) || 0;
   const syncId = r[0].id;
   const pendiente = r[0].estadoMovil !== 'sincronizado' && Number(syncId) < 0;
-  if (r[0].tipo === 'nopago') return { tipo: 'NO PAGO', valorPagado: v, syncId, pendiente };
+  if (r[0].tipo === 'nopago' || (r[0].tipo === 'pago' && v === 0)) return { tipo: 'NO PAGO', valorPagado: v, syncId, pendiente };
   if (r[0].tipo === 'parcial') return { tipo: 'PARCIAL', valorPagado: v, syncId, pendiente };
-  if (r[0].tipo === 'pago') return { tipo: v === 0 ? 'NO PAGO' : 'PAGO', valorPagado: v, syncId, pendiente };
-  return { tipo: 'DESCONOCIDO', valorPagado: v, syncId, pendiente };
+  return { tipo: 'PAGO', valorPagado: v, syncId, pendiente };
 };
 
-const ItemPayments = memo(({ id, name, address, amount, status, paymentType, estadoPago, saldo, cuotasPagas, saldoVencido, nombreUno, valorCuota, onPaymentSuccess, estadoMovil, telefono, latitud, longitud, valorCredito }) => {
+const ItemPayments = memo(({
+  id, name, address, amount, status, paymentType, estadoPago, saldo, cuotasPagas,
+  saldoVencido, nombreUno, valorCuota, onPaymentSuccess, estadoMovil, telefono,
+  latitud, longitud, valorCredito,
+  tipoTramitado: propTipoTramitado,
+  valorPagado: propValorPagado,
+  pendienteSync: propPendienteSync,
+}) => {
   const navigation = useNavigation();
   const [modalParcial, setModalParcial] = useState(false);
   const [modalNoPago, setModalNoPago] = useState(false);
   const [valorParcial, setValorParcial] = useState('');
   const [loading, setLoading] = useState(false);
-  const [tipoTramitado, setTipoTramitado] = useState(null);
-  const [valorPagado, setValorPagado] = useState(0);
-  const [pendienteSync, setPendienteSync] = useState(false);
+  const [tipoTramitado, setTipoTramitado] = useState(propTipoTramitado || null);
+  const [valorPagado, setValorPagado] = useState(propValorPagado || 0);
+  const [pendienteSync, setPendienteSync] = useState(propPendienteSync !== undefined ? propPendienteSync : false);
   const scale = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    if (estadoMovil === 'actualizado') (async () => {
-      try { const db = await getDbConnection(); const { tipo, valorPagado, pendiente } = await getUltimoTramite(db, id); setTipoTramitado(tipo); setValorPagado(valorPagado); setPendienteSync(!!pendiente); } catch {}
-    })(); else { setTipoTramitado(null); setValorPagado(0); setPendienteSync(false); }
-  }, [estadoMovil, id]);
+    if (propTipoTramitado !== undefined) setTipoTramitado(propTipoTramitado);
+    if (propValorPagado !== undefined) setValorPagado(propValorPagado);
+    if (propPendienteSync !== undefined) setPendienteSync(propPendienteSync);
+    else if (estadoMovil === 'actualizado') {
+      (async () => {
+        try {
+          const db = await getDbConnection();
+          const { tipo, valorPagado: vp, pendiente } = await getUltimoTramite(db, id);
+          setTipoTramitado(tipo);
+          setValorPagado(vp);
+          setPendienteSync(!!pendiente);
+        } catch {}
+      })();
+    }
+  }, [propTipoTramitado, propValorPagado, propPendienteSync, estadoMovil, id]);
 
   const pressIn = () => Animated.spring(scale, { toValue: 0.98, useNativeDriver: true, speed: 30 }).start();
   const pressOut = () => Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 30 }).start();
@@ -74,10 +144,20 @@ const ItemPayments = memo(({ id, name, address, amount, status, paymentType, est
       const ncp = tipo === 'nopago' ? cuotasPagas : cuotasPagas + 1;
       await updateFacturaWithConsecutivo(db, id, { estadoMovil: 'actualizado', saldo: ns, cuotasPagas: ncp, saldoVencido: nsv }, c);
       await Promise.all([insertTables(db, 'pagos', [pago]), insertTables(db, 'detallesCaja', [detalle])]);
+
+      setTipoTramitado(tipo === 'nopago' ? 'NO PAGO' : tipo === 'parcial' ? 'PARCIAL' : 'PAGO');
+      setValorPagado(tipo === 'nopago' ? 0 : valorPago);
+      setPendienteSync(true);
+
       Toast.show({ text1: tipo === 'pago' ? 'Pago realizado' : tipo === 'nopago' ? 'No pago registrado' : 'Pago parcial realizado' });
       onPaymentSuccess?.();
       if (tipo === 'parcial') { setModalParcial(false); setValorParcial(''); } else if (tipo === 'nopago') setModalNoPago(false);
-    } catch (e) { Toast.show({ text1: 'Error al procesar' }); } finally { setLoading(false); }
+    } catch (e) {
+      console.log('Error executePaymentAction:', e);
+      Toast.show({ text1: 'Error al procesar', text2: e.message || String(e) });
+    } finally {
+      setLoading(false);
+    }
   }, [id, saldo, cuotasPagas, saldoVencido, nombreUno, onPaymentSuccess]);
 
   const textoChip = estadoMovil === 'actualizado' && tipoTramitado ? tipoTramitado : paymentType;
@@ -135,11 +215,11 @@ const ItemPayments = memo(({ id, name, address, amount, status, paymentType, est
                 {!isPending && tipoTramitado && (
                   <View style={styles.syncBadge}>
                     {pendienteSync ? (
-                      <Icon name="check" size={10} color={apple.colors.tertiaryLabel} />
+                      <Icon name="check" size={11} color={apple.colors.tertiaryLabel} />
                     ) : (
-                      <View style={{ flexDirection: 'row', marginLeft: -2 }}>
-                        <Icon name="check" size={10} color={apple.colors.blue} />
-                        <Icon name="check" size={10} color={apple.colors.blue} style={{ marginLeft: -4 }} />
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <Icon name="check" size={11} color="#007AFF" />
+                        <Icon name="check" size={11} color="#007AFF" style={{ marginLeft: -4 }} />
                       </View>
                     )}
                   </View>
@@ -194,7 +274,17 @@ const ItemPayments = memo(({ id, name, address, amount, status, paymentType, est
           <Text style={styles.sheetTitle}>Pago parcial</Text>
           <Text style={styles.sheetSub}>{name} · Saldo {FormatMoneyDecimales(saldo)}</Text>
           <TextInput placeholder="0.00" keyboardType="numeric" style={styles.sheetInput} value={valorParcial} onChangeText={setValorParcial} placeholderTextColor={apple.colors.tertiaryLabel} />
-          <TouchableOpacity style={styles.sheetPrimary} onPress={() => { const v = parseFloat(valorParcial); if (isNaN(v) || v <= 0 || v > saldo) return Toast.show({ text1: 'Valor inválido' }); executePaymentAction('parcial', v); }} disabled={loading}>
+          <TouchableOpacity
+            style={styles.sheetPrimary}
+            onPress={() => {
+              const cleanStr = (valorParcial || '').replace(/[^0-9]/g, '');
+              const v = Number(cleanStr);
+              if (isNaN(v) || v <= 0) return Toast.show({ text1: 'Monto inválido', text2: 'Ingresa un valor mayor a 0' });
+              if (v > saldo) return Toast.show({ text1: 'Monto inválido', text2: 'No puede superar el saldo pendiente' });
+              executePaymentAction('parcial', v);
+            }}
+            disabled={loading}
+          >
             {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.sheetPrimaryText}>Confirmar pago</Text>}
           </TouchableOpacity>
         </View>

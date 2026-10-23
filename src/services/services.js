@@ -9,6 +9,7 @@
  */
 import { updateData, insertOrReplaceData, getDbConnection, getData, insertTables } from '../database/db';
 import { supabase } from '../lib/supabase';
+import { getCajaActual, saveCajaLocal, saveMovimientoLocal } from './cajaService';
 
 const SUPABASE_URL = 'https://gwpwntdwogxzmtegaaom.supabase.co';
 
@@ -42,11 +43,20 @@ export const AuthService = async (db, email, password) => {
         updateData(db, 'parametrizacion', { id: 8, valor: profile.superior_id }),
       ]);
     }
-    await Promise.all([
-      concepts?.length ? insertOrReplaceData(db, 'concepts', concepts) : Promise.resolve(),
-      caja ? insertOrReplaceData(db, 'cajas', [caja]) : Promise.resolve(),
-      movimientos?.length ? insertOrReplaceData(db, 'movimientos', movimientos) : Promise.resolve(),
-    ]);
+    if (caja && caja.id) {
+      await saveCajaLocal(db, caja, userId);
+    }
+
+    if (Array.isArray(movimientos) && movimientos.length > 0) {
+      for (const m of movimientos) {
+        if (!m || !m.id) continue;
+        await saveMovimientoLocal(db, m, caja?.id, 'sincronizado');
+      }
+    }
+
+    if (concepts?.length) {
+      try { await insertOrReplaceData(db, 'concepts', concepts); } catch {}
+    }
     const invoicesOk = await getInvoice(userId, access_token);
     console.log('Facturas cargadas:', invoicesOk);
     return { success: true, user: data.user };
@@ -73,6 +83,63 @@ export const getInvoice = async (userId, access_token) => {
 export const saveInvoice = async (invoices) => {
   if (!invoices || invoices.length === 0) return true;
   const db = await getDbConnection();
+
+  // Determinar facturas tramitadas en la caja actual para NO revertirlas a pendiente
+  let tramitadasEnEstaCaja = new Set();
+  let localConsecutivos = {};
+  try {
+    const cajaActual = await getCajaActual();
+    const currentCajaId = cajaActual?.id || null;
+
+    let queryPagos = `SELECT DISTINCT idFactura FROM pagos WHERE 1=1`;
+    let params = [];
+    if (currentCajaId) {
+      queryPagos += ` AND (idCaja = ? OR date(substr(horaDispositivo,1,10)) = date('now','localtime'))`;
+      params.push(currentCajaId);
+    } else {
+      queryPagos += ` AND date(substr(horaDispositivo,1,10)) = date('now','localtime')`;
+    }
+    const pagosRows = await getData(db, queryPagos, params);
+    if (pagosRows) {
+      for (const p of pagosRows) {
+        if (p.idFactura) tramitadasEnEstaCaja.add(String(p.idFactura));
+      }
+    }
+
+    // Preservar estado 'actualizado' y consecutivo de las facturas que ya están tramitadas localmente
+    const localActualizadas = await getData(db, `SELECT id, consecutivoTramitado FROM facturas WHERE estadoMovil = 'actualizado'`);
+    if (localActualizadas) {
+      for (const a of localActualizadas) {
+        if (a.id) {
+          tramitadasEnEstaCaja.add(String(a.id));
+          if (a.consecutivoTramitado) localConsecutivos[String(a.id)] = a.consecutivoTramitado;
+        }
+      }
+    }
+
+    // Si estamos online y hay caja abierta, consultar también movimientos del servidor para esta caja
+    if (currentCajaId) {
+      try {
+        const { data: serverMovements } = await supabase
+          .from('cash_movements')
+          .select('id, descripcion')
+          .eq('caja_id', currentCajaId);
+        if (serverMovements) {
+          for (const sm of serverMovements) {
+            const match = (sm.descripcion || '').match(/factura\s+([a-f0-9\-]+)/i);
+            if (match && match[1]) {
+              tramitadasEnEstaCaja.add(String(match[1]));
+            }
+          }
+        }
+      } catch (errSup) {
+        console.log('saveInvoice: error consultando cash_movements remotos:', errSup);
+      }
+    }
+  } catch (err) {
+    console.log('saveInvoice: error recopilando tramitadas:', err);
+  }
+
   const tableContent = invoices.map(element => {
     let pagosStr = '[]';
     let ultimoPago = null;
@@ -89,8 +156,11 @@ export const saveInvoice = async (invoices) => {
       } catch {}
     }
 
+    const invoiceIdStr = String(element.id);
+    const isTramitada = tramitadasEnEstaCaja.has(invoiceIdStr);
+
     return {
-      id: String(element.id),
+      id: invoiceIdStr,
       apellidoUno: element.apellidoCliente || null,
       apellidoDos: null,
       celular: element.telefonocliente || null,
@@ -115,14 +185,14 @@ export const saveInvoice = async (invoices) => {
       usuarioId: element.usuarioId || null,
       valorCuota: Number(element.valorCuota) || 0,
       valorInicial: Number(element.valorInicial) || 0,
-      estadoMovil: 'pendiente',
+      estadoMovil: isTramitada ? 'actualizado' : 'pendiente',
       fecha_vencimiento: element.fecha_vencimiento || null,
       fecha: element.fecha || null,
       alias: element.aliasCliente || null,
       documento: element.documentoCliente || null,
       num_cuotas: element.num_cuotas != null ? String(element.num_cuotas) : null,
       ultimo_pago: ultimoPago,
-      consecutivoTramitado: 0,
+      consecutivoTramitado: isTramitada ? (localConsecutivos[invoiceIdStr] || 1) : 0,
     };
   });
 
@@ -132,6 +202,14 @@ export const saveInvoice = async (invoices) => {
     const sql = `INSERT OR REPLACE INTO facturas (${cols.join(',')}) VALUES (${placeholders})`;
     for (const item of tableContent) {
       await db.executeSql(sql, Object.values(item));
+      if (item.estadoMovil === 'actualizado') {
+        try {
+          await db.executeSql(
+            `UPDATE pagos SET estadoMovil = 'sincronizado' WHERE idFactura = ? AND estadoMovil = 'enviando'`,
+            [item.id]
+          );
+        } catch {}
+      }
     }
     console.log(`Guardadas ${tableContent.length} facturas en SQLite`);
     return true;
