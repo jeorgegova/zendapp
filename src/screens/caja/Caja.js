@@ -101,7 +101,7 @@ export default function CajaScreen() {
           </TouchableOpacity>
         ))}
       </View>
-      <TouchableOpacity onPress={handleClearPending} style={{ marginHorizontal: 16, marginBottom: 8, borderWidth: 1, borderColor: '#FF3B30', borderRadius: 10, padding: 10, alignItems: 'center' }}>
+      <TouchableOpacity onPress={handleClearPending} style={{ marginHorizontal: 16, marginBottom: 8, borderWidth: 1, borderColor: '#FF3B30', borderRadius: apple.radius.m, padding: 10, alignItems: 'center' }}>
         <Text style={{ color: '#FF3B30', fontWeight: '700', fontSize: 12 }}><Icon name="trash" size={12} color="#FF3B30" /> Reiniciar / Borrar pendientes</Text>
       </TouchableOpacity>
 
@@ -161,7 +161,7 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: apple.colors.bgGrouped },
   card: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    borderRadius: apple.radius.l,
     borderWidth: 1,
     borderColor: '#E8EAED',
   },
@@ -170,7 +170,7 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 28, fontWeight: '700', color: apple.colors.label, letterSpacing: 0.36 },
   headerSub: { fontSize: 13, color: apple.colors.secondaryLabel, marginTop: 2, textTransform: 'capitalize' },
   segment: { flexDirection: 'row', backgroundColor: apple.colors.fill, margin: 16, borderRadius: apple.radius.s, padding: 3, gap: 4 },
-  segOpt: { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center' },
+  segOpt: { flex: 1, paddingVertical: 8, borderRadius: apple.radius.s, alignItems: 'center' },
   segActive: { backgroundColor: apple.colors.card },
   segText: { fontSize: 13, fontWeight: '500', color: apple.colors.secondaryLabel },
   segTextActive: { color: apple.colors.label, fontWeight: '600' },
@@ -194,7 +194,7 @@ const styles = StyleSheet.create({
   listHeader: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 8, alignItems: 'center' },
   listTitle: { fontSize: 13, fontWeight: '600', color: apple.colors.secondaryLabel, letterSpacing: 0.3, textTransform: 'uppercase' },
   row: { flexDirection: 'row', backgroundColor: apple.colors.card, marginHorizontal: 16, marginBottom: 8, padding: 14, borderRadius: apple.radius.m, alignItems: 'center', gap: 12 },
-  badge: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  badge: { width: 32, height: 32, borderRadius: apple.radius.l, alignItems: 'center', justifyContent: 'center' },
   rowTitle: { fontSize: 13, fontWeight: '600', color: apple.colors.label },
   rowSub: { fontSize: 11, color: apple.colors.tertiaryLabel, marginTop: 2 },
 });

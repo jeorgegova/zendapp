@@ -27,11 +27,11 @@ export function AppAlertProvider({ children }) {
     setTimeout(() => btn.onPress && btn.onPress(), 100);
   };
 
-  const iconMap = {
-    info: { name: 'info-circle', color: apple.colors.blue, bg: '#EFF6FF', border: '#DBEAFE' },
-    warning: { name: 'exclamation-triangle', color: apple.colors.warning, bg: '#FFF8E1', border: '#FFE9A8' },
-    error: { name: 'times-circle', color: apple.colors.danger, bg: '#FFEBEE', border: '#FFD4D4' },
-    success: { name: 'check-circle', color: apple.colors.success, bg: '#E8F5E9', border: '#C8E6C9' },
+    const iconMap = {
+    info: { name: 'info', color: '#0F172A', bg: '#F1F5F9', border: '#E2E8F0' },
+    warning: { name: 'exclamation-triangle', color: '#B45309', bg: '#FFFBEB', border: '#FDE68A' },
+    error: { name: 'times', color: '#DC2626', bg: '#FEF2F2', border: '#FECACA' },
+    success: { name: 'check', color: '#16A34A', bg: '#F0FDF4', border: '#BBF7D0' },
   };
   const iconCfg = config.icon || iconMap[config.type] || iconMap.info;
 
@@ -79,16 +79,16 @@ export function appAlert(title, message, buttons) {
 
 const styles = StyleSheet.create({
   modal: { justifyContent: 'center', alignItems: 'center' },
-  sheet: { backgroundColor: '#fff', borderRadius: 20, padding: 22, width: '84%', maxWidth: 340, alignSelf: 'center' },
-  iconWrap: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', alignSelf: 'center', marginBottom: 14, borderWidth: 1 },
-  title: { fontSize: 17, fontWeight: '700', color: '#1D1D1F', textAlign: 'center' },
-  message: { fontSize: 13, color: '#6E6E73', textAlign: 'center', marginTop: 8, lineHeight: 18, paddingHorizontal: 8 },
+  sheet: { backgroundColor: '#fff', borderRadius: apple.radius.l, padding: 20, width: '86%', maxWidth: 360, alignSelf: 'center', borderWidth: 1, borderColor: '#E2E8F0' },
+  iconWrap: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', alignSelf: 'center', marginBottom: 12, borderWidth: 1 },
+  title: { fontSize: 15, fontWeight: '800', color: '#0F172A', textAlign: 'center', letterSpacing: -0.2 },
+  message: { fontSize: 13, color: '#64748B', textAlign: 'center', marginTop: 6, lineHeight: 18, paddingHorizontal: 4, fontWeight: '500' },
   actions: { flexDirection: 'row', gap: 10, marginTop: 18 },
-  btn: { flex: 1, height: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 0.5 },
-  btnDefault: { backgroundColor: apple.colors.blue, borderColor: apple.colors.blue },
-  btnDefaultText: { color: '#fff', fontWeight: '700' },
-  btnCancel: { backgroundColor: '#F2F2F7', borderColor: '#E5E5EA' },
-  btnCancelText: { color: '#1D1D1F', fontWeight: '600' },
-  btnDestructive: { backgroundColor: '#FF3B30', borderColor: '#FF3B30' },
-  btnDestructiveText: { color: '#fff', fontWeight: '700' },
+  btn: { flex: 1, height: 44, borderRadius: apple.radius.m, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+  btnDefault: { backgroundColor: '#0F172A', borderColor: '#0F172A' },
+  btnDefaultText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  btnCancel: { backgroundColor: '#fff', borderColor: '#E2E8F0' },
+  btnCancelText: { color: '#0F172A', fontWeight: '700', fontSize: 13 },
+  btnDestructive: { backgroundColor: '#0F172A', borderColor: '#0F172A' },
+  btnDestructiveText: { color: '#fff', fontWeight: '700', fontSize: 13 },
 });

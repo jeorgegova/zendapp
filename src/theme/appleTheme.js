@@ -30,11 +30,11 @@ export const apple = {
     tabBg: 'rgba(249,249,249,0.94)',
   },
   radius: {
-    xs: 8,
-    s: 12,
-    m: 16,
-    l: 20,
-    xl: 28,
+    xs: 6,
+    s: 8,
+    m: 12,
+    l: 16,
+    xl: 20,
     pill: 999,
   },
   spacing: {

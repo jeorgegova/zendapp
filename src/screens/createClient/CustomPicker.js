@@ -88,14 +88,14 @@ const CustomPicker = ({ data, selectedValue, onSelect, placeholder, visible, onC
 
 const styles = StyleSheet.create({
       modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.35)", justifyContent: "flex-end" },
-      modalContent: { backgroundColor: "#fff", borderTopLeftRadius: 28, borderTopRightRadius: 28, height: "72%", paddingBottom: 16 },
+      modalContent: { backgroundColor: "#fff", borderTopLeftRadius: apple.radius.xl, borderTopRightRadius: apple.radius.xl, height: "72%", paddingBottom: 16 },
       modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 16, borderBottomWidth: 0.5, borderColor: "#E5E5EA" },
       modalTitle: { fontSize: 17, fontWeight: "700", color: "#1D1D1F" },
-      modalItem: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 16, marginHorizontal: 8, borderRadius: 12 },
+      modalItem: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 16, marginHorizontal: 8, borderRadius: apple.radius.m },
       modalItemSelected: { backgroundColor: "#E8F0FE" },
       modalItemText: { fontSize: 16, color: "#1D1D1F" },
       modalItemTextSelected: { color: "#007AFF", fontWeight: "600" },
-      searchContainer: { flexDirection: "row", alignItems: "center", backgroundColor: "#F2F2F7", margin: 12, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1, borderColor: "#E5E5EA" },
+      searchContainer: { flexDirection: "row", alignItems: "center", backgroundColor: "#F2F2F7", margin: 12, paddingHorizontal: 12, borderRadius: apple.radius.m, borderWidth: 1, borderColor: "#E5E5EA" },
       searchIcon: { marginRight: 8 },
       searchInput: { flex: 1, height: 40, fontSize: 15, color: "#1D1D1F" },
       clearButton: { padding: 4, marginLeft: 8 },

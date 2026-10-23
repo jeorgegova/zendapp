@@ -172,7 +172,7 @@ const styles = StyleSheet.create({
   logoCircle: {
     width: 64,
     height: 64,
-    borderRadius: 32,
+    borderRadius: apple.radius.xl,
     backgroundColor: apple.colors.blue,
     alignItems: 'center',
     justifyContent: 'center',
