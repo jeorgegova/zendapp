@@ -4,7 +4,7 @@
 import 'intl';
 import 'intl/locale-data/jsonp/en';
 import { getDbConnection, getData } from '../database/db'
-exports.versionGesper = 'Comercial';
+export const versionGesper = 'Comercial';
 import NetInfo from "@react-native-community/netinfo";
 import _BackgroundTimer from "react-native-background-timer";
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -254,39 +254,28 @@ export const EvaluationDataSend = async () => {
     const db = await getDbConnection();
 
     // Ejecutar todas las consultas en paralelo
+    let countVentas = 0;
+    try {
+      const v = await getData(db, `SELECT COUNT(*) as count FROM ventas_pendientes WHERE estado = 'pendiente'`);
+      countVentas = v?.[0]?.count || 0;
+    } catch {}
+
     const [
         movimientos,
         pagos,
-        usersProveedor,
         usersCliente,
-        expenses,
-        income,
-        withdrawal,
-        pay,
-        nopay,
     ] = await Promise.all([
-        getData(db, `SELECT COUNT(*) as count FROM movimientos WHERE id < 0 AND tipo IN ('gasto', 'ingreso', 'retiro')`),
-        getData(db, `SELECT COUNT(*) as count FROM pagos WHERE id < 0`),
-        getData(db, `SELECT COUNT(*) as count FROM users WHERE tipo = 'proveedor' AND id < 0`),
-        getData(db, `SELECT COUNT(*) as count FROM users WHERE id < 0`),
-        getData(db, `SELECT COUNT(*) as count FROM detallesCaja WHERE estado = 'guardado' AND tipo = 'gasto'`),
-        getData(db, `SELECT COUNT(*) as count FROM detallesCaja WHERE estado = 'guardado' AND tipo = 'ingreso'`),
-        getData(db, `SELECT COUNT(*) as count FROM detallesCaja WHERE estado = 'guardado' AND tipo = 'retiro'`),
-        getData(db, `SELECT COUNT(*) as count FROM pagos WHERE tipo = 'pago' AND estadoMovil = 'actualizado'`),
-        getData(db, `SELECT COUNT(*) as count FROM pagos WHERE tipo = 'nopago' AND estadoMovil = 'actualizado'`)
+        getData(db, `SELECT COUNT(*) as count FROM movimientos WHERE id < 0 AND estadoMovil = 'actualizado'`),
+        getData(db, `SELECT COUNT(*) as count FROM pagos WHERE id < 0 AND estadoMovil = 'actualizado'`),
+        getData(db, `SELECT COUNT(*) as count FROM users WHERE id < 0 AND estadoMovil = 'actualizado'`),
     ]);
 
     // Convertir a booleano los resultados
     const hasData = [
-        movimientos[0].count,
-        pagos[0].count,
-        usersProveedor[0].count,
-        usersCliente[0].count,
-        expenses[0].count,
-        income[0].count,
-        withdrawal[0].count,
-        pay[0].count,
-        nopay[0].count
+        countVentas,
+        movimientos?.[0]?.count || 0,
+        pagos?.[0]?.count || 0,
+        usersCliente?.[0]?.count || 0,
     ].some(count => count > 0);
 
     return hasData;
@@ -320,40 +309,7 @@ export const verifyData = (type, valor, call) => {
 
 }
 export const deleteReloadData = async (db, comeMenu) => {
-    try {
-        /* // Limpiar writeDate
-        await db.executeSql("UPDATE writeDate SET valor = NULL WHERE id = 1");
-
-        // Obtener nombres de tablas a limpiar
-        let tables = [];
-        if (comeMenu) {
-            tables = await getData(db, `SELECT group_concat(name) as f FROM sqlite_master
-                WHERE type = 'table' 
-                AND name NOT IN ('detallesCaja', 'facturas', 'writeDate', 'sqlite_sequence', 'parametrizacion', 'cajaDay', 'movimientos', 'dataBases')
-                ORDER BY name`);
-        } else {
-            tables = await getData(db, `SELECT group_concat(name) as f FROM sqlite_master
-                WHERE type = 'table' 
-                AND name NOT IN ('detallesCaja', 'facturas','writeDate', 'sqlite_sequence', 'parametrizacion', 'cajaDay', 'movimientos', 'dataBases')
-                ORDER BY name`);
-        }
-
-        if (!tables[0]?.f) {
-            return true; // No hay tablas que eliminar
-        }
-
-        const tableNames = tables[0].f.split(",");
-
-        // Construir y ejecutar todas las consultas en paralelo
-        await Promise.all(
-            tableNames.map(table => db.executeSql(`DELETE FROM ${table}`))
-        ); */
-
-        return true;
-    } catch (error) {
-        console.error("Error en deleteReloadData:", error);
-        return false;
-    }
+    return true;
 };
 
 export const deleteDataAplication = async (db, comeMenu) => {

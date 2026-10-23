@@ -13,9 +13,9 @@ import { AppleButton } from '../components/AppleButton';
 import { appAlert } from '../components/AppAlert';
 
 export default function LoginScreen() {
-  let db;
-  const [email, setEmail] = useState('gogicolombia@gmail.com');
-  const [password, setPassword] = useState('Admin1234!');
+  const dbRef = useRef(null);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [modalVisible, setModalVisible] = useState(false);
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
@@ -32,8 +32,8 @@ export default function LoginScreen() {
     ]).start();
     (async () => {
       try {
-        db = await getDbConnection();
-        await getData(db, 'select * from parametrizacion');
+        dbRef.current = await getDbConnection();
+        await getData(dbRef.current, 'select * from parametrizacion');
         await requestLocationPermissions();
       } catch (e) { console.error(e); }
     })();
@@ -59,7 +59,8 @@ export default function LoginScreen() {
     if (!email.trim() || !password.trim()) return appAlert('Error', 'Completa email y contraseña');
     setLoading(true);
     try {
-      const result = await AuthService(db, email, password);
+      if (!dbRef.current) dbRef.current = await getDbConnection();
+      const result = await AuthService(dbRef.current, email, password);
       if (!result.success) appAlert('Error', result.message);
     } catch (e) { appAlert('Error', e.message); } finally { setLoading(false); }
   };

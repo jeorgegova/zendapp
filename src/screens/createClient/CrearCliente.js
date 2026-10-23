@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { BackHandler, View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform, SafeAreaView, Alert, Animated } from 'react-native';
-import { useNavigation } from '@react-navigation/native'
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { BackHandler, View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform, SafeAreaView, Animated } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { useFocusEffect } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import { getData, getDbConnection } from '../../database/db';
@@ -8,9 +8,32 @@ import CustomPicker from './CustomPicker';
 import { apple } from '../../theme/appleTheme';
 import { AppleButton } from '../../components/AppleButton';
 import { appAlert } from '../../components/AppAlert';
+import { useAuth } from '../../context/AuthContext';
+import { getCajaActual } from '../../services/cajaService';
+import { supabase } from '../../lib/supabase';
+
+import { SyncWithSupabase } from '../../utils/sync';
+
+const FormField = React.memo(({ label, value, onChangeText, placeholder, keyboardType, icon }) => (
+  <View style={styles.field}>
+    <Text style={styles.fieldLabel}>{label}</Text>
+    <View style={styles.inputWrap}>
+      {icon && <Icon name={icon} size={14} color={apple.colors.tertiaryLabel} style={{ marginRight: 8 }} />}
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={apple.colors.tertiaryLabel}
+        style={styles.input}
+        keyboardType={keyboardType}
+      />
+    </View>
+  </View>
+));
 
 const CrearCliente = () => {
   const navigation = useNavigation();
+  const { accessToken, userId } = useAuth();
   const fade = useRef(new Animated.Value(0)).current;
   let db;
   const [formData, setFormData] = useState({ nombre: '', apellido: '', alias: '', direccion: '', telefono: '', genero: '', documento: '', valor: '', plazo: '', interes: '' });
@@ -25,6 +48,7 @@ const CrearCliente = () => {
   useEffect(() => {
     Animated.timing(fade, { toValue: 1, duration: 400, useNativeDriver: true }).start();
     LoadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useFocusEffect(
     React.useCallback(() => {
@@ -59,39 +83,118 @@ const CrearCliente = () => {
     } catch (e) { console.error(e); }
   };
 
-  const handleChange = (name, value) => setFormData(p => ({ ...p, [name]: value }));
+  const handleChange = useCallback((name, value) => {
+    setFormData(p => ({ ...p, [name]: value }));
+  }, []);
   const handlePickerSelect = (name, value, label) => { setFormData(p => ({ ...p, [name]: value })); setFormDataLabels(p => ({ ...p, [name]: label })); };
   const handleGeneroChange = g => setFormData(p => ({ ...p, genero: g }));
 
   const handleSubmit = async () => {
     if (!isFormValid) return;
+    if (!userId) {
+      appAlert('Error', 'Sesión no válida. Por favor inicia sesión nuevamente.');
+      return;
+    }
     setSaving(true);
     try {
-      db = db || await getDbConnection();
-      const parametrizacion = await getData(db, 'select valor from parametrizacion');
+      // 1. Obtener caja abierta (Offline-First desde SQLite o Supabase)
+      const cajaAbierta = await getCajaActual();
+      if (!cajaAbierta) {
+        appAlert('Sin caja', 'No tienes una caja abierta. Ve a la sección Caja y abre una antes de registrar ventas.');
+        setSaving(false);
+        return;
+      }
+
       const { nombre, apellido, alias, telefono, direccion, documento, valor, plazo, interes } = formData;
-      const response = await fetch('https://gwpwntdwogxzmtegaaom.supabase.co/functions/v1/create_sale', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${parametrizacion[1].valor}` },
-        body: JSON.stringify({ nombre, apellido, alias, email: '', telefono, direccion, documento, monto: parseFloat(valor), vendedor_id: parametrizacion[4].valor, caja_id: 'fb752968-9a6a-46cb-bcd6-83c3d4f82e1c', plazo_id: parseInt(plazo), interes_id: parseInt(interes) })
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'Error desconocido');
-      appAlert('Éxito', `Factura creada: ${result.id_factura}`);
+      const montoNum = parseFloat(valor);
+      const database = await getDbConnection();
+
+      // Calcular número de cuotas y valor por cuota según el plazo seleccionado
+      const plazoObj = conceptosPlazo.find(c => String(c.id) === String(plazo));
+      let numCuotas = 1;
+      if (plazoObj?.valor) {
+        const match = plazoObj.valor.match(/\d+/);
+        if (match) numCuotas = parseInt(match[0], 10) || 1;
+      }
+      const valorCuota = Math.round(montoNum / numCuotas);
+      const tempId = -Date.now();
+      const nowIso = new Date().toISOString();
+      const todayDate = nowIso.slice(0, 10);
+
+      const salePayload = {
+        nombre: nombre.trim(),
+        apellido: (apellido || '').trim(),
+        alias: (alias || '').trim(),
+        email: '',
+        telefono: (telefono || '').trim(),
+        direccion: (direccion || '').trim(),
+        documento: (documento || '').trim(),
+        monto: montoNum,
+        vendedor_id: userId,
+        caja_id: cajaAbierta.id,
+        plazo_id: parseInt(plazo, 10),
+        interes_id: parseInt(interes, 10),
+      };
+
+      // 2. Guardar en ventas_pendientes (para que el worker de sync lo suba cuando haya red)
+      await database.executeSql(
+        `INSERT INTO ventas_pendientes (temp_id, payload, estado, created_at) VALUES (?, ?, 'pendiente', ?)`,
+        [String(tempId), JSON.stringify(salePayload), nowIso]
+      );
+
+      // 3. Guardar en la tabla local facturas para que aparezca inmediatamente en Cartera
+      await database.executeSql(
+        `INSERT OR REPLACE INTO facturas (
+          id, nombreUno, apellidoUno, alias, documento, celular, direccion,
+          saldo, valorInicial, valorCuota, num_cuotas, cuotasPagas, cuotasVencidas,
+          estado, estadoMovil, fecha, idVendedor, usuarioId, paymentTermId, detalles, consecutivoTramitado
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 'pendiente', 'pendiente', ?, ?, ?, ?, ?, 0)`,
+        [
+          String(tempId),
+          nombre.trim(),
+          (apellido || '').trim(),
+          (alias || '').trim(),
+          (documento || '').trim(),
+          (telefono || '').trim(),
+          (direccion || '').trim(),
+          montoNum,
+          montoNum,
+          valorCuota,
+          String(numCuotas),
+          todayDate,
+          userId,
+          userId,
+          plazo,
+          JSON.stringify(salePayload),
+        ]
+      );
+
+      // 4. Registrar movimiento local de venta para actualizar la caja
+      await database.executeSql(
+        `INSERT INTO movimientos (id, descripcion, monto, horaDispositivo, tipo, estadoMovil, idCaja, fecha) VALUES (?, ?, ?, ?, 'venta', 'sincronizado', ?, ?)`,
+        [tempId - 1, `Venta: ${nombre.trim()} (${documento.trim()})`, montoNum, nowIso, cajaAbierta.id, nowIso]
+      );
+
+      // 5. Descontar saldo_final de la caja localmente
+      try {
+        await database.executeSql(`UPDATE cajas SET saldo_final = COALESCE(saldo_final, 0) - ? WHERE id = ?`, [montoNum, cajaAbierta.id]);
+      } catch {}
+
+      // 6. Si hay conexión en este instante, disparar sincronización en background
+      try {
+        SyncWithSupabase(false, () => {});
+      } catch {}
+
+      appAlert('Éxito', 'Venta registrada localmente. Se sincronizará de inmediato si tienes conexión, o se guardará offline para subir luego.');
       setFormData({ nombre: '', apellido: '', alias: '', direccion: '', telefono: '', genero: '', documento: '', valor: '', plazo: '', interes: '' });
       setFormDataLabels({ plazo: '', interes: '' });
-    } catch (err) { appAlert('Error', err.message); } finally { setSaving(false); }
+      navigation.navigate('Payments');
+    } catch (err) {
+      appAlert('Error', err.message || 'No se pudo guardar la venta');
+    } finally {
+      setSaving(false);
+    }
   };
-
-  const Field = ({ label, value, field, placeholder, keyboardType, icon }) => (
-    <View style={styles.field}>
-      <Text style={styles.fieldLabel}>{label}</Text>
-      <View style={styles.inputWrap}>
-        {icon && <Icon name={icon} size={14} color={apple.colors.tertiaryLabel} style={{ marginRight: 8 }} />}
-        <TextInput value={value} onChangeText={t => handleChange(field, t)} placeholder={placeholder} placeholderTextColor={apple.colors.tertiaryLabel} style={styles.input} keyboardType={keyboardType} />
-      </View>
-    </View>
-  );
 
   return (
     <SafeAreaView style={styles.root}>
@@ -105,16 +208,16 @@ const CrearCliente = () => {
       </View>
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }} showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           <Animated.View style={{ opacity: fade }}>
             <Text style={styles.pageTitle}>Crear cliente y crédito</Text>
             <Text style={styles.pageSub}>Completa los datos. El cliente y la factura se crean transaccionalmente.</Text>
 
             <View style={styles.section}>
               <View style={styles.sectionHeader}><View style={[styles.sectionIcon, { backgroundColor: '#E8F0FE' }]}><Icon name="user" size={14} color={apple.colors.blue} /></View><Text style={styles.sectionTitle}>Información personal</Text></View>
-              <Field label="Nombre *" value={formData.nombre} field="nombre" placeholder="Ej. Carlos" icon="user" />
-              <Field label="Apellido *" value={formData.apellido} field="apellido" placeholder="Ej. Ramírez" icon="user-o" />
-              <Field label="Alias *" value={formData.alias} field="alias" placeholder="Ej. carlosr" icon="star-o" />
+              <FormField label="Nombre *" value={formData.nombre} onChangeText={t => handleChange('nombre', t)} placeholder="Ej. Carlos" icon="user" />
+              <FormField label="Apellido *" value={formData.apellido} onChangeText={t => handleChange('apellido', t)} placeholder="Ej. Ramírez" icon="user-o" />
+              <FormField label="Alias *" value={formData.alias} onChangeText={t => handleChange('alias', t)} placeholder="Ej. carlosr" icon="star-o" />
               <Text style={styles.fieldLabel}>Género *</Text>
               <View style={styles.segment}>
                 {['masculino', 'femenino'].map(g => (
@@ -127,14 +230,14 @@ const CrearCliente = () => {
 
             <View style={styles.section}>
               <View style={styles.sectionHeader}><View style={[styles.sectionIcon, { backgroundColor: '#E8F5E9' }]}><Icon name="map-marker" size={14} color={apple.colors.success} /></View><Text style={styles.sectionTitle}>Contacto</Text></View>
-              <Field label="Dirección *" value={formData.direccion} field="direccion" placeholder="Calle 123 #45-67" icon="home" />
-              <Field label="Teléfono *" value={formData.telefono} field="telefono" placeholder="311 234 5678" keyboardType="phone-pad" icon="phone" />
-              <Field label="Documento *" value={formData.documento} field="documento" placeholder="CC / NIT" keyboardType="numeric" icon="id-card" />
+              <FormField label="Dirección *" value={formData.direccion} onChangeText={t => handleChange('direccion', t)} placeholder="Calle 123 #45-67" icon="home" />
+              <FormField label="Teléfono *" value={formData.telefono} onChangeText={t => handleChange('telefono', t)} placeholder="311 234 5678" keyboardType="phone-pad" icon="phone" />
+              <FormField label="Documento *" value={formData.documento} onChangeText={t => handleChange('documento', t)} placeholder="CC / NIT" keyboardType="numeric" icon="id-card" />
             </View>
 
             <View style={styles.section}>
               <View style={styles.sectionHeader}><View style={[styles.sectionIcon, { backgroundColor: '#FFF3E0' }]}><Icon name="money" size={14} color={apple.colors.warning} /></View><Text style={styles.sectionTitle}>Venta</Text></View>
-              <Field label="Valor *" value={formData.valor} field="valor" placeholder="0.00" keyboardType="numeric" icon="dollar" />
+              <FormField label="Valor *" value={formData.valor} onChangeText={t => handleChange('valor', t)} placeholder="0.00" keyboardType="numeric" icon="dollar" />
               <Text style={styles.fieldLabel}>Plazo *</Text>
               <TouchableOpacity style={styles.picker} onPress={() => setShowPlazoModal(true)}>
                 <Text style={[styles.pickerText, !formDataLabels.plazo && { color: apple.colors.tertiaryLabel }]}>{formDataLabels.plazo || 'Selecciona plazo'}</Text>

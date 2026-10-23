@@ -1,0 +1,256 @@
+// src/screens/admin/components/CajaCard.js
+import React from 'react';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import Icon from 'react-native-vector-icons/FontAwesome';
+import { apple } from '../../../theme/appleTheme';
+
+const formatMoney = (val) => {
+  const num = parseFloat(val) || 0;
+  return '$' + num.toLocaleString('es-CO');
+};
+
+export const CajaCard = ({ caja, isMyCaja = false, onPress }) => {
+  const isOpen = caja.estado === 'abierta';
+  const isAdmin = caja.rol_usuario === 'admin';
+  const progreso = parseFloat(caja.progreso_visitas) || 0;
+
+  return (
+    <TouchableOpacity
+      style={[styles.card, isMyCaja && styles.myCajaCard]}
+      activeOpacity={0.8}
+      onPress={() => onPress(caja)}
+    >
+      {/* Header */}
+      <View style={styles.header}>
+        <View style={styles.titleCol}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <View style={[styles.avatarBadge, isAdmin ? styles.avatarAdmin : styles.avatarVendedor]}>
+              <Icon name={isAdmin ? 'shield' : 'user'} size={14} color={isAdmin ? '#5856D6' : apple.colors.blue} />
+            </View>
+            <View style={{ marginLeft: 8 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Text style={styles.userName} numberOfLines={1}>
+                  {caja.nombre_usuario} {isMyCaja ? '(Mi Caja)' : ''}
+                </Text>
+              </View>
+              <Text style={styles.roleText}>{caja.rol_usuario?.toUpperCase()}</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Estado badge */}
+        <View style={[styles.statusBadge, isOpen ? styles.statusBadgeOpen : styles.statusBadgeClosed]}>
+          <View style={[styles.statusDot, { backgroundColor: isOpen ? apple.colors.success : apple.colors.danger }]} />
+          <Text style={[styles.statusText, { color: isOpen ? apple.colors.success : apple.colors.danger }]}>
+            {isOpen ? 'ABIERTA' : 'CERRADA'}
+          </Text>
+        </View>
+      </View>
+
+      {/* Barra de progreso de visitas */}
+      <View style={styles.progressContainer}>
+        <View style={styles.progressHeader}>
+          <Text style={styles.progressLabel}>Progreso de cobro</Text>
+          <Text style={styles.progressVal}>{progreso}%</Text>
+        </View>
+        <View style={styles.progressBarBg}>
+          <View style={[styles.progressBarFill, { width: `${Math.min(progreso, 100)}%` }]} />
+        </View>
+      </View>
+
+      <View style={styles.divider} />
+
+      {/* Grid de saldos */}
+      <View style={styles.grid}>
+        <View style={styles.gridItem}>
+          <Text style={styles.gridLabel}>Saldo Inicial</Text>
+          <Text style={styles.gridVal}>{formatMoney(caja.saldo_inicial)}</Text>
+        </View>
+        <View style={styles.gridItem}>
+          <Text style={styles.gridLabel}>Saldo Actual</Text>
+          <Text style={[styles.gridVal, { color: apple.colors.blue }]}>
+            {formatMoney(caja.saldo_final)}
+          </Text>
+        </View>
+      </View>
+
+      <View style={[styles.grid, { marginTop: 6 }]}>
+        <View style={styles.gridItem}>
+          <Text style={styles.gridLabel}>Debido Cobrar</Text>
+          <Text style={styles.gridVal}>{formatMoney(caja.valor_debido_cobrar)}</Text>
+        </View>
+        <View style={styles.gridItem}>
+          <Text style={styles.gridLabel}>Recaudado</Text>
+          <Text style={[styles.gridVal, { color: apple.colors.success }]}>
+            {formatMoney(caja.valor_recaudado)}
+          </Text>
+        </View>
+      </View>
+
+      <View style={[styles.grid, { marginTop: 6 }]}>
+        <View style={styles.gridItem}>
+          <Text style={styles.gridLabel}>Ventas</Text>
+          <Text style={styles.gridVal}>{formatMoney(caja.valor_ventas)}</Text>
+        </View>
+        <View style={styles.gridItem}>
+          <Text style={styles.gridLabel}>Gastos</Text>
+          <Text style={[styles.gridVal, { color: apple.colors.danger }]}>
+            {formatMoney(caja.valor_gastos)}
+          </Text>
+        </View>
+      </View>
+
+      {/* Footer stats */}
+      <View style={styles.footerRow}>
+        <Text style={styles.footerStat}>
+          Clientes: <Text style={{ fontWeight: '700', color: apple.colors.label }}>{caja.total_clientes || 0}</Text>
+        </Text>
+        <Text style={styles.footerStat}>
+          No Pagos: <Text style={{ fontWeight: '700', color: apple.colors.danger }}>{caja.cantidad_nopagos || 0}</Text>
+        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <Text style={styles.verMovText}>Movimientos</Text>
+          <Icon name="chevron-right" size={11} color={apple.colors.blue} style={{ marginLeft: 4 }} />
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+};
+
+const styles = StyleSheet.create({
+  card: {
+    backgroundColor: apple.colors.card,
+    borderRadius: apple.radius.m,
+    padding: apple.spacing.m,
+    marginBottom: apple.spacing.m,
+    ...apple.shadow.card,
+    ...apple.border.card,
+  },
+  myCajaCard: {
+    borderWidth: 1.5,
+    borderColor: apple.colors.blue,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  titleCol: {
+    flex: 1,
+  },
+  avatarBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarAdmin: {
+    backgroundColor: '#F0EFFF',
+  },
+  avatarVendedor: {
+    backgroundColor: apple.colors.blueLight,
+  },
+  userName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: apple.colors.label,
+  },
+  roleText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: apple.colors.tertiaryLabel,
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  statusBadgeOpen: {
+    backgroundColor: '#E8F8EE',
+  },
+  statusBadgeClosed: {
+    backgroundColor: '#FFEBEA',
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 5,
+  },
+  statusText: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  progressContainer: {
+    marginTop: 10,
+  },
+  progressHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  progressLabel: {
+    fontSize: 11,
+    color: apple.colors.secondaryLabel,
+  },
+  progressVal: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: apple.colors.label,
+  },
+  progressBarBg: {
+    height: 6,
+    backgroundColor: apple.colors.bgGrouped,
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: apple.colors.blue,
+    borderRadius: 3,
+  },
+  divider: {
+    height: 0.5,
+    backgroundColor: apple.colors.separator,
+    marginVertical: 10,
+  },
+  grid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  gridItem: {
+    flex: 1,
+  },
+  gridLabel: {
+    fontSize: 10,
+    color: apple.colors.secondaryLabel,
+    marginBottom: 1,
+  },
+  gridVal: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: apple.colors.label,
+  },
+  footerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 12,
+    paddingTop: 8,
+    borderTopWidth: 0.5,
+    borderTopColor: apple.colors.separator,
+  },
+  footerStat: {
+    fontSize: 12,
+    color: apple.colors.secondaryLabel,
+  },
+  verMovText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: apple.colors.blue,
+  },
+});
