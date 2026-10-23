@@ -17,6 +17,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import { apple } from '../../theme/appleTheme';
 import { appAlert } from '../../components/AppAlert';
+import LogoutConfirmModal from '../../components/LogoutConfirmModal';
 import { useAuth } from '../../context/AuthContext';
 import {
   getSubordinates,
@@ -31,6 +32,7 @@ export default function AdminUsuarios() {
   const [users, setUsers] = useState([]);
   const [filteredUsers, setFilteredUsers] = useState([]);
   const [search, setSearch] = useState('');
+  const [showLogout, setShowLogout] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
@@ -38,25 +40,8 @@ export default function AdminUsuarios() {
   const { signOut } = useAuth();
 
   const handleLogout = useCallback(() => {
-    Alert.alert(
-      'Cerrar Sesión',
-      '¿Estás seguro de que deseas cerrar sesión en Zendapp?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Cerrar Sesión',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await signOut();
-            } catch (err) {
-              appAlert('Error', err.message);
-            }
-          },
-        },
-      ]
-    );
-  }, [signOut]);
+    setShowLogout(true);
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -223,6 +208,11 @@ export default function AdminUsuarios() {
         onClose={() => setModalVisible(false)}
         onSave={handleSaveUser}
         editingUser={editingUser}
+      />
+      <LogoutConfirmModal
+        visible={showLogout}
+        onClose={() => setShowLogout(false)}
+        onConfirm={signOut}
       />
     </SafeAreaView>
   );

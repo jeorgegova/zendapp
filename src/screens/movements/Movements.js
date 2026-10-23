@@ -25,6 +25,8 @@ export default function MovementsScreen() {
     if (!isRefresh) setLoading(true);
     try {
       const actual = await getCajaActual();
+      console.log("la caja--------------", actual);
+
       setCaja(actual);
       const movs = await listMovimientos({ cajaId: actual?.id || null, limit: 50, offset: 0 });
       setItems(movs || []);
@@ -83,7 +85,7 @@ export default function MovementsScreen() {
       let desc = formDesc.trim();
       if (loc.lat && loc.lng) desc += ` [${loc.lat.toFixed(5)},${loc.lng.toFixed(5)}]`;
       await createCashMovement({ cajaId: caja.id, tipo: formTipo, descripcion: desc, monto });
-      setModalVisible(false); setFormDesc(''); setFormMonto(''); setFormTipo('ingreso'); await load(); appAlert('Éxito', `${formTipo === 'ingreso' ? 'Ingreso' : 'Retiro'} registrado`);
+      setModalVisible(false); setFormDesc(''); setFormMonto(''); setFormTipo('ingreso'); await load(); appAlert('Éxito', `${formTipo === 'ingreso' ? 'Ingreso' : formTipo === 'gasto' ? 'Gasto' : 'Retiro'} registrado`);
     } catch (e) { appAlert('Error', e.message); } finally { setSaving(false); }
   };
 
@@ -114,7 +116,7 @@ export default function MovementsScreen() {
           <TouchableOpacity style={styles.searchBtn} onPress={handleSearch}><Icon name="arrow-right" size={12} color="#fff" /></TouchableOpacity>
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, marginTop: 10 }}>
-          {['todos', 'ingreso', 'retiro', 'venta', 'pago'].map(t => (
+          {['todos', 'ingreso', 'retiro', 'gasto', 'venta', 'pago'].map(t => (
             <TouchableOpacity key={t} onPress={() => setFilterTipo(t)} style={[styles.chip, filterTipo === t && styles.chipActive]}>
               <Text style={[styles.chipText, filterTipo === t && styles.chipTextActive]}>{t}</Text>
             </TouchableOpacity>
@@ -131,7 +133,7 @@ export default function MovementsScreen() {
         contentContainerStyle={{ paddingBottom: 90 }}
       />
 
-      <TouchableOpacity style={[styles.fab, !caja && { backgroundColor: apple.colors.tertiaryLabel }]} onPress={() => caja ? setModalVisible(true) : appAlert('Caja cerrada', 'Abre caja en tab Caja para ingresos/retiros.')}>
+      <TouchableOpacity style={[styles.fab, !caja && { backgroundColor: apple.colors.tertiaryLabel }]} onPress={() => caja?.estado === "abierta" ? setModalVisible(true) : appAlert('Caja cerrada', 'Abre caja en tab Caja para ingresos/retiros.')}>
         <Icon name="plus" size={18} color="#fff" />
       </TouchableOpacity>
 
@@ -143,6 +145,7 @@ export default function MovementsScreen() {
           <View style={styles.tipoRow}>
             <TouchableOpacity style={[styles.tipoBtn, formTipo === 'ingreso' && { backgroundColor: apple.colors.success, borderColor: apple.colors.success }]} onPress={() => setFormTipo('ingreso')}><Text style={[styles.tipoText, formTipo === 'ingreso' && { color: '#fff' }]}>Ingreso</Text></TouchableOpacity>
             <TouchableOpacity style={[styles.tipoBtn, formTipo === 'retiro' && { backgroundColor: apple.colors.danger, borderColor: apple.colors.danger }]} onPress={() => setFormTipo('retiro')}><Text style={[styles.tipoText, formTipo === 'retiro' && { color: '#fff' }]}>Retiro</Text></TouchableOpacity>
+            <TouchableOpacity style={[styles.tipoBtn, formTipo === 'gasto' && { backgroundColor: apple.colors.warning, borderColor: apple.colors.warning }]} onPress={() => setFormTipo('gasto')}><Text style={[styles.tipoText, formTipo === 'gasto' && { color: '#fff' }]}>Gasto</Text></TouchableOpacity>
           </View>
           <Text style={styles.hint}>Venta/pago son automáticos.</Text>
           <Text style={styles.label}>Descripción</Text><TextInput style={styles.input} value={formDesc} onChangeText={setFormDesc} placeholder="Ej. Transporte, consignación" placeholderTextColor={apple.colors.tertiaryLabel} />

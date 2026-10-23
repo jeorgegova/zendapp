@@ -35,7 +35,40 @@ export const AuthService = async (db, email, password) => {
       return { success: false, message: errorResult.error || 'Error al obtener el perfil' };
     }
     const result = await response.json();
-    const { profile, concepts, caja, movimientos } = result;
+    let { profile, concepts, caja, movimientos } = result;
+
+    const isAdmin = profile?.rol === 'admin' || profile?.rol === 'superadmin';
+    let tieneCajaAbierta = caja && caja.id && caja.estado === 'abierta';
+
+    // Doble verificación directa contra Supabase si no es admin y caja no vino abierta
+    if (!isAdmin && !tieneCajaAbierta) {
+      try {
+        const { data: dbCaja } = await supabase
+          .from('cajas')
+          .select('*')
+          .eq('usuario_id', userId)
+          .eq('estado', 'abierta')
+          .order('fecha_apertura', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (dbCaja) {
+          tieneCajaAbierta = true;
+          caja = dbCaja;
+        }
+      } catch (e) {
+        console.log('Error verificando caja abierta en Supabase:', e);
+      }
+    }
+
+    // Regla estricta: El vendedor NO puede iniciar sesión si no tiene caja abierta
+    if (!isAdmin && !tieneCajaAbierta) {
+      await supabase.auth.signOut();
+      return {
+        success: false,
+        message: 'No puedes iniciar sesión porque no tienes una caja abierta. Tu administrador debe realizar la apertura de tu caja antes de que puedas comenzar a trabajar.',
+      };
+    }
+
     if (profile) {
       await Promise.all([
         updateData(db, 'parametrizacion', { id: 6, valor: profile.rol }),

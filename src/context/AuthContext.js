@@ -1,3 +1,4 @@
+import { appAlert } from '../components/AppAlert';
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 
@@ -8,7 +9,7 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchProfile = useCallback(async (userId, accessToken) => {
+  const fetchUserData = useCallback(async (userId, accessToken) => {
     try {
       const response = await fetch(
         'https://gwpwntdwogxzmtegaaom.supabase.co/functions/v1/get-user-profile',
@@ -21,56 +22,126 @@ export function AuthProvider({ children }) {
           body: JSON.stringify({ id: userId }),
         },
       );
-      if (!response.ok) return null;
+      if (!response.ok) return { profile: null, caja: null };
       const result = await response.json();
-      return result.profile || null;
+      return { profile: result.profile || null, caja: result.caja || null };
     } catch {
-      return null;
+      return { profile: null, caja: null };
     }
   }, []);
 
   const refreshProfile = useCallback(async () => {
     const { data } = await supabase.auth.getSession();
     if (data?.session?.user) {
-      const p = await fetchProfile(data.session.user.id, data.session.access_token);
+      const { profile: p } = await fetchUserData(data.session.user.id, data.session.access_token);
       setProfile(p);
     }
-  }, [fetchProfile]);
+  }, [fetchUserData]);
 
   useEffect(() => {
     let mounted = true;
 
-    supabase.auth.getSession().then(async ({ data }) => {
-      if (!mounted) return;
-      setSession(data.session || null);
-      if (data.session?.user) {
-        const p = await fetchProfile(data.session.user.id, data.session.access_token);
-        setProfile(p);
+    const checkSessionAndCaja = async (sess, isInitial = false) => {
+      if (!sess?.user) {
+        if (mounted) {
+          setSession(null);
+          setProfile(null);
+          setLoading(false);
+        }
+        return;
       }
-      setLoading(false);
+
+      try {
+        const { profile: p, caja: c } = await fetchUserData(sess.user.id, sess.access_token);
+        const isAdmin = p?.rol === 'admin' || p?.rol === 'superadmin';
+
+        let tieneCaja = c && c.id && c.estado === 'abierta';
+        if (!isAdmin && !tieneCaja) {
+          try {
+            const { data: dbCaja } = await supabase
+              .from('cajas')
+              .select('*')
+              .eq('usuario_id', sess.user.id)
+              .eq('estado', 'abierta')
+              .order('fecha_apertura', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            if (dbCaja) tieneCaja = true;
+          } catch {}
+        }
+
+        if (!isAdmin && !tieneCaja) {
+          // Bloquear vendedor sin caja abierta
+          await supabase.auth.signOut();
+          if (mounted) {
+            setSession(null);
+            setProfile(null);
+            setLoading(false);
+            if (isInitial) {
+              appAlert(
+                'Caja requerida',
+                'No tienes una caja abierta. Tu administrador debe realizar la apertura de tu caja antes de que puedas ingresar.'
+              );
+            }
+          }
+          return;
+        }
+
+        if (mounted) {
+          setProfile(p);
+          setSession(sess);
+          setLoading(false);
+        }
+      } catch (e) {
+        if (mounted) {
+          setSession(sess);
+          setLoading(false);
+        }
+      }
+    };
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (mounted) checkSessionAndCaja(data.session, true);
     });
 
-    const { data: listener } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
-      setSession(newSession);
-      if (newSession?.user) {
-        const p = await fetchProfile(newSession.user.id, newSession.access_token);
-        setProfile(p);
-      } else {
-        setProfile(null);
+    const { data: listener } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+      if (event === 'SIGNED_OUT') {
+        if (mounted) {
+          setSession(null);
+          setProfile(null);
+          setLoading(false);
+        }
+      } else if (newSession) {
+        // En SIGNED_IN AuthService hace la validación primaria, aquí aseguramos la sesión
+        checkSessionAndCaja(newSession, false);
       }
-      setLoading(false);
     });
 
     return () => {
       mounted = false;
       listener.subscription.unsubscribe();
     };
-  }, [fetchProfile]);
+  }, [fetchUserData]);
 
   const signOut = useCallback(async () => {
+    try {
+      const { getPendingSyncCount } = require('../services/cajaService');
+      const pendingCount = await getPendingSyncCount();
+      if (pendingCount > 0) {
+        appAlert(
+          '¡Espera un momento!',
+          `Tienes ${pendingCount} cobro(s) o movimiento(s) guardados en este teléfono que aún no se han enviado al sistema. Si sales ahora podrías perder información. Conéctate a internet y sincroniza antes de cerrar sesión.`
+        );
+        return false;
+      }
+    } catch (e) {
+      console.log('Error verificando pendientes en signOut:', e);
+    }
+
     await supabase.auth.signOut();
     setSession(null);
     setProfile(null);
+    return true;
   }, []);
 
   const value = {

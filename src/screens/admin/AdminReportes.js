@@ -15,6 +15,7 @@ import {
 import Icon from 'react-native-vector-icons/FontAwesome';
 import { apple } from '../../theme/appleTheme';
 import { appAlert } from '../../components/AppAlert';
+import LogoutConfirmModal from '../../components/LogoutConfirmModal';
 import { useAuth } from '../../context/AuthContext';
 import { getReporteConsolidado } from '../../services/adminService';
 
@@ -41,6 +42,7 @@ export default function AdminReportes() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [showLogout, setShowLogout] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -108,12 +110,7 @@ Generado el: ${new Date().toLocaleString('es-CO')}
           </Text>
         </View>
         <TouchableOpacity
-          onPress={() => {
-            Alert.alert('Cerrar Sesión', '¿Deseas cerrar la sesión de administrador?', [
-              { text: 'Cancelar', style: 'cancel' },
-              { text: 'Salir', style: 'destructive', onPress: signOut },
-            ]);
-          }}
+          onPress={() => setShowLogout(true)}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           style={{ padding: 6 }}
         >
@@ -248,6 +245,11 @@ Generado el: ${new Date().toLocaleString('es-CO')}
           }
         />
       )}
+      <LogoutConfirmModal
+        visible={showLogout}
+        onClose={() => setShowLogout(false)}
+        onConfirm={signOut}
+      />
     </SafeAreaView>
   );
 }

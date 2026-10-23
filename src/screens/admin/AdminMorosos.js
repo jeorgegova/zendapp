@@ -16,6 +16,7 @@ import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import { apple } from '../../theme/appleTheme';
 import { appAlert } from '../../components/AppAlert';
+import LogoutConfirmModal from '../../components/LogoutConfirmModal';
 import { useAuth } from '../../context/AuthContext';
 import { getAdminMorosos, castigarCartera } from '../../services/adminService';
 
@@ -39,6 +40,7 @@ export default function AdminMorosos() {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [showLogout, setShowLogout] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -121,12 +123,7 @@ export default function AdminMorosos() {
             <Text style={styles.badgeTopText}>{items.length} en mora</Text>
           </View>
           <TouchableOpacity
-            onPress={() => {
-              Alert.alert('Cerrar Sesión', '¿Deseas cerrar la sesión de administrador?', [
-                { text: 'Cancelar', style: 'cancel' },
-                { text: 'Salir', style: 'destructive', onPress: signOut },
-              ]);
-            }}
+            onPress={() => setShowLogout(true)}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             style={{ padding: 6 }}
           >
@@ -240,6 +237,11 @@ export default function AdminMorosos() {
           }
         />
       )}
+      <LogoutConfirmModal
+        visible={showLogout}
+        onClose={() => setShowLogout(false)}
+        onConfirm={signOut}
+      />
     </SafeAreaView>
   );
 }

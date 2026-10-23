@@ -61,7 +61,10 @@ export default function LoginScreen() {
     try {
       if (!dbRef.current) dbRef.current = await getDbConnection();
       const result = await AuthService(dbRef.current, email, password);
-      if (!result.success) appAlert('Error', result.message);
+      if (!result.success) {
+        const title = (result.message && result.message.toLowerCase().includes('caja')) ? 'Caja requerida' : 'Error';
+        appAlert(title, result.message);
+      }
     } catch (e) { appAlert('Error', e.message); } finally { setLoading(false); }
   };
 

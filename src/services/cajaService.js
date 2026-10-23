@@ -68,7 +68,7 @@ async function getCajaActualLocal(db) {
     try {
       const p = await getData(db, `SELECT valor FROM parametrizacion WHERE id = 5 LIMIT 1`);
       userId = p?.[0]?.valor || null;
-    } catch {}
+    } catch { }
 
     let rows = [];
     if (userId) {
@@ -78,7 +78,7 @@ async function getCajaActualLocal(db) {
           `SELECT * FROM cajas WHERE estado = 'abierta' AND (usuario_id = ? OR usuario_id IS NULL OR usuario_id = '') ORDER BY COALESCE(fecha_apertura, fecha) DESC LIMIT 1`,
           [userId]
         );
-      } catch {}
+      } catch { }
     }
     if (!rows || rows.length === 0) {
       try {
@@ -86,7 +86,7 @@ async function getCajaActualLocal(db) {
           db,
           `SELECT * FROM cajas WHERE estado = 'abierta' ORDER BY COALESCE(fecha_apertura, fecha) DESC LIMIT 1`
         );
-      } catch {}
+      } catch { }
     }
     if (rows && rows.length > 0) {
       return rows[0];
@@ -106,7 +106,7 @@ export async function getCajaActual() {
     if (!net.isConnected) {
       return await getCajaActualLocal(db);
     }
-  } catch {}
+  } catch { }
 
   // 2. Si hay conexión, consultar Supabase
   try {
@@ -130,7 +130,7 @@ export async function getCajaActual() {
           // Servidor confirma que no hay caja abierta
           try {
             await db.executeSql(`UPDATE cajas SET estado = 'cerrada' WHERE usuario_id = ?`, [userId]);
-          } catch {}
+          } catch { }
           return null;
         }
       }
@@ -197,9 +197,27 @@ export async function abrirCaja(saldoInicial = 0) {
   if (!session) throw new Error('No autenticado');
   const userId = session.user.id;
 
-  // validar no haya abierta
-  const abierta = await getCajaActual();
-  if (abierta) throw new Error('Ya existe una caja abierta');
+  // Solo el administrador tiene permiso de abrir cajas
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('rol')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (profile?.rol !== 'admin' && profile?.rol !== 'superadmin') {
+    throw new Error('Solo el administrador puede realizar la apertura de cajas.');
+  }
+
+  // El admin puede tener hasta 3 cajas abiertas simultáneamente
+  const { data: abiertas, error: countErr } = await supabase
+    .from('cajas')
+    .select('id')
+    .eq('usuario_id', userId)
+    .eq('estado', 'abierta');
+
+  if (abiertas && abiertas.length >= 3) {
+    throw new Error('Tienes 3 cajas abiertas al mismo tiempo. Debes cerrar al menos una de tus cajas antes de poder abrir una nueva.');
+  }
 
   const { data, error } = await supabase
     .from('cajas')
@@ -217,47 +235,86 @@ export async function abrirCaja(saldoInicial = 0) {
   return data;
 }
 
-export async function cerrarCaja(cajaId) {
-  const { data: movements, error: movErr } = await supabase
-    .from('cash_movements')
-    .select('monto, tipo')
-    .eq('caja_id', cajaId);
-  if (movErr) throw movErr;
+/**
+ * Cuenta cuantos registros pendientes de sincronizar existen en SQLite local
+ */
+export async function getPendingSyncCount() {
+  const db = await getDbConnection();
+  let count = 0;
 
-  // regla única: ingreso/pago suman, retiro/venta restan
-  let saldoCalculado = 0;
-  for (const m of movements || []) {
-    const v = Number(m.monto) || 0;
-    if (m.tipo === 'ingreso' || m.tipo === 'pago') saldoCalculado += v;
-    else if (m.tipo === 'retiro' || m.tipo === 'venta') saldoCalculado -= v;
-    else saldoCalculado += v;
+  try {
+    const movs = await getData(
+      db,
+      `SELECT COUNT(*) as c FROM movimientos WHERE id < 0 OR estadoMovil = 'actualizado' OR estadoMovil = 'enviando'`
+    );
+    count += Number(movs?.[0]?.c || 0);
+  } catch {}
+
+  try {
+    const ventas = await getData(
+      db,
+      `SELECT COUNT(*) as c FROM ventas_pendientes WHERE estado = 'pendiente' OR estado = 'enviando'`
+    );
+    count += Number(ventas?.[0]?.c || 0);
+  } catch {}
+
+  try {
+    const pagos = await getData(
+      db,
+      `SELECT COUNT(*) as c FROM pagos WHERE id < 0 OR estadoMovil = 'actualizado' OR estadoMovil = 'enviando'`
+    );
+    count += Number(pagos?.[0]?.c || 0);
+  } catch {}
+
+  return count;
+}
+
+export async function cerrarCaja(cajaId) {
+  // 1. Validar que no haya registros pendientes por sincronizar
+  const pendingCount = await getPendingSyncCount();
+  if (pendingCount > 0) {
+    throw new Error(
+      `Tienes ${pendingCount} movimiento(s) guardado(s) en tu teléfono pendientes por enviar. Activa tu internet y presiona 'Sincronizar' para asegurar tu dinero antes de cerrar la caja.`
+    );
   }
 
-  const { data: caja } = await supabase.from('cajas').select('saldo_inicial').eq('id', cajaId).single();
-  const saldoFinal = Number(caja?.saldo_inicial || 0) + saldoCalculado;
+  // 2. Exigir conexión a internet para cerrar y cuadrar con el servidor
+  let isConnected = false;
+  try {
+    const net = await NetInfo.fetch();
+    isConnected = !!net.isConnected;
+  } catch {}
 
-  const { data, error } = await supabase
-    .from('cajas')
-    .update({ estado: 'cerrada', fecha_cierre: new Date().toISOString(), saldo_final: saldoFinal })
-    .eq('id', cajaId)
-    .eq('estado', 'abierta')
-    .select()
-    .single();
-  if (error) throw error;
-  if (!data) throw new Error('Caja no encontrada o ya cerrada');
+  if (!isConnected) {
+    throw new Error(
+      'Necesitas conexión a internet para poder cerrar tu caja y cuadrar las cuentas del día. Activa tus datos móviles o conéctate a una red Wi-Fi e inténtalo de nuevo.'
+    );
+  }
 
-  // Actualizar inmediatamente en SQLite local con estado 'cerrada'
+  // 3. Invocar RPC rpc_close_box (valida que ningún subordinado tenga caja abierta y calcula saldo atómicamente)
+  const { data: rpcRes, error: rpcErr } = await supabase.rpc('rpc_close_box', {
+    p_caja_id: cajaId,
+  });
+
+  if (rpcErr) {
+    throw new Error(rpcErr.message || 'Error cerrando la caja en el servidor');
+  }
+
+  const saldoFinal = rpcRes?.saldo_final || 0;
+  const fechaCierre = new Date().toISOString();
+
+  // 4. Actualizar inmediatamente en SQLite local con estado 'cerrada'
   try {
     const db = await getDbConnection();
     await db.executeSql(
       `UPDATE cajas SET estado = 'cerrada', fecha_cierre = ?, saldo_final = ? WHERE id = ?`,
-      [data.fecha_cierre || new Date().toISOString(), saldoFinal, String(cajaId)]
+      [fechaCierre, saldoFinal, String(cajaId)]
     );
   } catch (e) {
     console.log('Error actualizando cierre de caja local:', e);
   }
 
-  return data;
+  return { id: cajaId, estado: 'cerrada', saldo_final: saldoFinal, fecha_cierre: fechaCierre };
 }
 
 export async function getMovimientosCaja(cajaId, limit = 50, offset = 0) {
@@ -294,7 +351,7 @@ export async function getMovimientosCaja(cajaId, limit = 50, offset = 0) {
       [String(cajaId), String(cajaId), limit, offset]
     );
     if (rows && rows.length > 0) return rows;
-  } catch {}
+  } catch { }
 
   try {
     return (await getData(

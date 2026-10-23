@@ -18,6 +18,7 @@ import { appAlert } from '../../components/AppAlert';
 import { useAuth } from '../../context/AuthContext';
 import { getAdminCajas, abrirCajasMasivo } from '../../services/adminService';
 import { CajaCard } from './components/CajaCard';
+import LogoutConfirmModal from '../../components/LogoutConfirmModal';
 
 export default function AdminCajas() {
   const navigation = useNavigation();
@@ -27,6 +28,7 @@ export default function AdminCajas() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [opening, setOpening] = useState(false);
+  const [showLogout, setShowLogout] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -49,10 +51,24 @@ export default function AdminCajas() {
     loadData();
   };
 
+  const adminAbiertas = cajas.filter(
+    (c) => (c.usuario_id === userId || c.rol_usuario === 'admin') && c.estado === 'abierta'
+  ).length;
+
   const handlePressAbrirMasivo = () => {
-    Alert.alert(
+    if (adminAbiertas >= 3) {
+      appAlert(
+        'Tienes 3 cajas abiertas',
+        'Ya alcanzaste el límite de 3 cajas abiertas al mismo tiempo. Debes cerrar al menos una de tus cajas antes de poder realizar una nueva apertura.'
+      );
+      return;
+    }
+
+    appAlert(
       'Apertura Masiva de Cajas',
-      '¿Deseas abrir las cajas de todos los usuarios activos?\n\nEl saldo inicial se tomará automáticamente del saldo final anterior (o $0 si es su primera caja).',
+      `¿Deseas abrir las cajas de todos los vendedores activos y una nueva caja para ti con la fecha de hoy?
+
+Actualmente tienes ${adminAbiertas} de 3 cajas permitidas abiertas.`,
       [
         { text: 'Cancelar', style: 'cancel' },
         {
@@ -61,10 +77,14 @@ export default function AdminCajas() {
             setOpening(true);
             try {
               const res = await abrirCajasMasivo();
-              appAlert('Éxito', `Se abrieron ${res.cajas_abiertas} cajas correctamente`);
+              appAlert(
+                '¡Apertura exitosa!',
+                `Se abrieron ${res.cajas_abiertas} caja(s) correctamente, incluyendo tu nueva caja del día.`
+              );
               loadData();
             } catch (err) {
-              appAlert('Error', err.message);
+              console.log("Error abrir masivo", err.message);
+              appAlert('Atención', err.message || 'No se pudieron abrir las cajas');
             } finally {
               setOpening(false);
             }
@@ -85,18 +105,13 @@ export default function AdminCajas() {
         <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>Gestión de Cajas</Text>
           <Text style={styles.headerSubtitle}>
-            Supervisión diaria de operaciones
+            Supervisión diaria · {adminAbiertas}/3 cajas admin abiertas
           </Text>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <TouchableOpacity
             style={styles.headerLogoutBtn}
-            onPress={() => {
-              Alert.alert('Cerrar Sesión', '¿Deseas salir de Zendapp?', [
-                { text: 'Cancelar', style: 'cancel' },
-                { text: 'Cerrar Sesión', style: 'destructive', onPress: signOut },
-              ]);
-            }}
+            onPress={() => setShowLogout(true)}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             <Icon name="sign-out" size={16} color={apple.colors.danger} />
@@ -136,6 +151,11 @@ export default function AdminCajas() {
           }
         />
       )}
+      <LogoutConfirmModal
+        visible={showLogout}
+        onClose={() => setShowLogout(false)}
+        onConfirm={signOut}
+      />
     </SafeAreaView>
   );
 }

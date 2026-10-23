@@ -2,7 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { BackHandler, View, Text, StyleSheet, TouchableOpacity, FlatList, ActivityIndicator, TextInput, Alert, RefreshControl, SafeAreaView } from 'react-native';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { getCajaActual, abrirCaja, cerrarCaja, getMovimientosCaja, getHistorialCajas } from '../../services/cajaService';
+import { getCajaActual, abrirCaja, cerrarCaja, getMovimientosCaja, getHistorialCajas, getPendingSyncCount } from '../../services/cajaService';
 import { useAuth } from '../../context/AuthContext';
 import { FormatMoneyDecimales, formatMoneyInput, parseMoneyToNumeric } from '../../utils/utilities';
 import { apple } from '../../theme/appleTheme';
@@ -67,15 +67,48 @@ export default function CajaScreen() {
       { text: 'Borrar TODO', style: 'destructive', onPress: async () => { await clearAllLocalData(); appAlert('Hecho', 'Base reiniciada. Cierra y abre la app.'); } },
     ]);
 
+  const isAdmin = profile?.rol === 'admin' || profile?.rol === 'superadmin';
+
   const handleAbrir = async () => {
+    if (!isAdmin) {
+      return appAlert('Acceso restringido', 'Solo el administrador puede realizar la apertura de cajas.');
+    }
     const val = parseMoneyToNumeric(saldoInicial);
     if (val < 0) return appAlert('Error', 'Saldo inicial no puede ser negativo');
     try { setLoading(true); await abrirCaja(val); await load(); appAlert('Éxito', 'Caja abierta'); } catch (e) { appAlert('Error', e.message); } finally { setLoading(false); }
   };
-  const handleCerrar = () => appAlert('Cerrar caja', '¿Confirmar cierre? Se calculará saldo final.', [
-    { text: 'Cancelar', style: 'cancel' },
-    { text: 'Cerrar', style: 'destructive', onPress: async () => { try { setLoading(true); await cerrarCaja(caja.id); await load(); appAlert('Éxito', 'Caja cerrada'); } catch (e) { appAlert('Error', e.message); } finally { setLoading(false); } } },
-  ]);
+    const handleCerrar = async () => {
+    try {
+      const pendingCount = await getPendingSyncCount();
+      if (pendingCount > 0) {
+        appAlert(
+          'Movimientos sin enviar',
+          `Tienes ${pendingCount} movimiento(s) guardado(s) en tu teléfono que aún no se han enviado al sistema. Conéctate a internet y presiona 'Sincronizar' antes de cerrar la caja para que tus cuentas cuadren.`
+        );
+        return;
+      }
+    } catch {}
+
+    appAlert('Cerrar caja del día', '¿Estás seguro de cerrar tu caja? Se calculará tu saldo final definitivo y se enviará el balance del día al sistema.', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Cerrar',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            setLoading(true);
+            await cerrarCaja(caja.id);
+            await load();
+            appAlert('Éxito', 'Caja cerrada exitosamente');
+          } catch (e) {
+            appAlert('No se pudo cerrar', e.message);
+          } finally {
+            setLoading(false);
+          }
+        },
+      },
+    ]);
+  };
 
   const Row = ({ item }) => {
     const isIngreso = item.tipo === 'ingreso' || item.tipo === 'pago';
@@ -115,14 +148,24 @@ export default function CajaScreen() {
         !caja ? (
           <View style={{ padding: 16 }}>
             <View style={{ padding: 16 }}>
-              <View style={[styles.card, { alignItems: 'center', padding: 24 }]}>
-                <View style={[styles.iconCircle, { backgroundColor: apple.colors.fill }]}><Icon name="lock" size={24} color={apple.colors.tertiaryLabel} /></View>
-                <Text style={styles.emptyTitle}>No hay caja abierta</Text>
-                <Text style={styles.emptySub}>Ingresa el saldo inicial para iniciar jornada</Text>
-                <View style={styles.inputRow}>
-                  <TextInput style={styles.input} value={saldoInicial} onChangeText={t => setSaldoInicial(formatMoneyInput(t))} keyboardType="numeric" placeholder="$ 0" placeholderTextColor={apple.colors.tertiaryLabel} />
-                  <AppleButton title="Abrir caja" onPress={handleAbrir} style={{ flex: 1 }} />
+              <View style={[styles.card, { alignItems: 'center', padding: 28 }]}>
+                <View style={[styles.iconCircle, { backgroundColor: apple.colors.fill, width: 64, height: 64, borderRadius: 32 }]}>
+                  <Icon name="lock" size={26} color={apple.colors.tertiaryLabel} />
                 </View>
+                <Text style={[styles.emptyTitle, { fontSize: 18, marginTop: 10 }]}>Caja cerrada</Text>
+                {isAdmin ? (
+                  <>
+                    <Text style={[styles.emptySub, { marginBottom: 16 }]}>Ingresa el saldo inicial para iniciar jornada</Text>
+                    <View style={styles.inputRow}>
+                      <TextInput style={styles.input} value={saldoInicial} onChangeText={t => setSaldoInicial(formatMoneyInput(t))} keyboardType="numeric" placeholder="$ 0" placeholderTextColor={apple.colors.tertiaryLabel} />
+                      <AppleButton title="Abrir caja" onPress={handleAbrir} style={{ flex: 1 }} />
+                    </View>
+                  </>
+                ) : (
+                  <Text style={[styles.emptySub, { marginTop: 8, lineHeight: 20, maxWidth: 290, textAlign: 'center' }]}>
+                    Tu caja del día se encuentra cerrada. Solo tu administrador puede realizar la apertura de cajas para que puedas operar.
+                  </Text>
+                )}
               </View>
             </View>
           </View>

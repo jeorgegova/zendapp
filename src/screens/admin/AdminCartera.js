@@ -15,6 +15,7 @@ import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import { apple } from '../../theme/appleTheme';
 import { appAlert } from '../../components/AppAlert';
+import LogoutConfirmModal from '../../components/LogoutConfirmModal';
 import { useAuth } from '../../context/AuthContext';
 import { getCarteraSummary } from '../../services/adminService';
 import { CarteraUserCard } from './components/CarteraUserCard';
@@ -30,6 +31,7 @@ export default function AdminCartera() {
   const [summary, setSummary] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [showLogout, setShowLogout] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -72,12 +74,7 @@ export default function AdminCartera() {
         </View>
         <TouchableOpacity
           style={styles.headerLogoutBtn}
-          onPress={() => {
-            Alert.alert('Cerrar Sesión', '¿Deseas salir de Zendapp?', [
-              { text: 'Cancelar', style: 'cancel' },
-              { text: 'Cerrar Sesión', style: 'destructive', onPress: signOut },
-            ]);
-          }}
+          onPress={() => setShowLogout(true)}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
           <Icon name="sign-out" size={17} color={apple.colors.danger} />
@@ -130,6 +127,11 @@ export default function AdminCartera() {
           }
         />
       )}
+      <LogoutConfirmModal
+        visible={showLogout}
+        onClose={() => setShowLogout(false)}
+        onConfirm={signOut}
+      />
     </SafeAreaView>
   );
 }

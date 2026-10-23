@@ -48,6 +48,39 @@ export default function AdminCajaDetalle() {
   const [movDesc, setMovDesc] = useState('');
   const [movMonto, setMovMonto] = useState('');
   const [savingMov, setSavingMov] = useState(false);
+  const [closing, setClosing] = useState(false);
+
+  const handleCerrarCaja = () => {
+    const cajaId = caja.caja_id || caja.id;
+    appAlert(
+      'Cerrar caja',
+      `¿Deseas cerrar la caja de ${caja.nombre_usuario || 'este usuario'}? Se validará en el servidor y se calculará el saldo final definitivo.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Cerrar caja',
+          style: 'destructive',
+          onPress: async () => {
+            setClosing(true);
+            try {
+              const { cerrarCaja } = require('../../services/cajaService');
+              await cerrarCaja(cajaId);
+              appAlert('¡Caja cerrada!', 'La caja se cerró exitosamente en el sistema.', [
+                {
+                  text: 'OK',
+                  onPress: () => navigation.goBack(),
+                },
+              ]);
+            } catch (err) {
+              appAlert('No se pudo cerrar', err.message);
+            } finally {
+              setClosing(false);
+            }
+          },
+        },
+      ]
+    );
+  };
 
   const isOpen = caja?.estado === 'abierta';
 
@@ -144,10 +177,21 @@ export default function AdminCajaDetalle() {
         </View>
 
         {isOpen && (
-          <TouchableOpacity style={styles.btnNewMov} onPress={() => setModalVisible(true)}>
-            <Icon name="plus" size={12} color="#FFFFFF" />
-            <Text style={styles.btnNewMovText}>Movimiento</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <TouchableOpacity
+              style={styles.btnCloseCaja}
+              onPress={handleCerrarCaja}
+              disabled={closing}
+            >
+              <Icon name="power-off" size={12} color="#FFFFFF" />
+              <Text style={styles.btnCloseCajaText}>{closing ? '...' : 'Cerrar'}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.btnNewMov} onPress={() => setModalVisible(true)}>
+              <Icon name="plus" size={12} color="#FFFFFF" />
+              <Text style={styles.btnNewMovText}>Movimiento</Text>
+            </TouchableOpacity>
+          </View>
         )}
       </View>
 
@@ -366,6 +410,20 @@ const styles = StyleSheet.create({
   headerSubtitle: {
     fontSize: 12,
     color: apple.colors.secondaryLabel,
+  },
+  btnCloseCaja: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: apple.colors.danger,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: apple.radius.s,
+    gap: 4,
+  },
+  btnCloseCajaText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   btnNewMov: {
     flexDirection: 'row',

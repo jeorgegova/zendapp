@@ -35,7 +35,7 @@ export async function getCurrentLocationOrNull() {
 }
 
 export async function createCashMovement({ cajaId, tipo, descripcion, monto }) {
-  if (!['ingreso', 'retiro'].includes(tipo)) throw new Error('Tipo debe ser ingreso o retiro');
+  if (!['ingreso', 'retiro', 'gasto'].includes(tipo)) throw new Error('Tipo debe ser ingreso, retiro o gasto');
   const val = Number(monto);
   if (!val || val <= 0) throw new Error('Monto debe ser > 0');
   if (!cajaId) throw new Error('No hay caja abierta');
@@ -54,7 +54,7 @@ export async function createCashMovement({ cajaId, tipo, descripcion, monto }) {
   try {
     if (tipo === 'ingreso') {
       await db.executeSql(`UPDATE cajas SET saldo_final = COALESCE(saldo_final, 0) + ? WHERE id = ?`, [val, cajaId]);
-    } else if (tipo === 'retiro') {
+    } else if (tipo === 'retiro' || tipo === 'gasto') {
       await db.executeSql(`UPDATE cajas SET saldo_final = COALESCE(saldo_final, 0) - ? WHERE id = ?`, [val, cajaId]);
     }
   } catch {}
@@ -172,4 +172,43 @@ export async function listMovimientos({ cajaId, limit = 50, offset = 0, search =
   } catch {
     return [];
   }
+}
+
+
+/**
+ * Transferencia espejo atomica entre dos cajas (Retiro en origen + Ingreso en destino)
+ */
+export async function transferBetweenBoxes({ sourceCajaId, destCajaId, monto, descripcion }) {
+  const val = Number(monto);
+  if (!val || val <= 0) throw new Error('El monto debe ser mayor a 0');
+  if (!sourceCajaId || !destCajaId) throw new Error('Debe especificar caja origen y caja destino');
+
+  const { data, error } = await supabase.rpc('rpc_cash_transfer', {
+    p_source_caja_id: sourceCajaId,
+    p_dest_caja_id: destCajaId,
+    p_monto: val,
+    p_descripcion: descripcion?.trim() || 'Transferencia entre cajas',
+  });
+
+  if (error) throw new Error(error.message || 'Error en la transferencia');
+
+  try {
+    const db = await getDbConnection();
+    await db.executeSql(`UPDATE cajas SET saldo_final = COALESCE(saldo_final, 0) - ? WHERE id = ?`, [val, sourceCajaId]);
+  } catch {}
+
+  return data;
+}
+
+/**
+ * Anulacion estricta de venta / credito (solo si no tiene abonos registrados)
+ */
+export async function cancelInvoiceSale(invoiceId, motivo = '') {
+  if (!invoiceId) throw new Error('ID de factura requerido');
+  const { data, error } = await supabase.rpc('rpc_cancel_sale', {
+    p_invoice_id: invoiceId,
+    p_motivo: motivo,
+  });
+  if (error) throw new Error(error.message || 'Error al cancelar la venta');
+  return data;
 }

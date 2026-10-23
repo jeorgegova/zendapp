@@ -130,7 +130,18 @@ const CrearCliente = () => {
         const match = plazoObj.valor.match(/\d+/);
         if (match) numCuotas = parseInt(match[0], 10) || 1;
       }
-      const valorCuota = Math.round(montoNum / numCuotas);
+      const interesObj = conceptosInteres.find(c => String(c.id) === String(interes));
+      let tasaNum = 0;
+      if (interesObj?.valor) {
+        const matchInt = interesObj.valor.match(/([0-9]+(?:\.[0-9]+)?)/);
+        if (matchInt) {
+          const rawVal = parseFloat(matchInt[0]);
+          tasaNum = rawVal < 1 ? rawVal : rawVal / 100.0;
+        }
+      }
+      const montoInteres = Math.round(montoNum * tasaNum);
+      const totalFactura = montoNum + montoInteres;
+      const valorCuota = Math.round(totalFactura / numCuotas);
       const tempId = -Date.now();
       const nowIso = new Date().toISOString();
       const todayDate = nowIso.slice(0, 10);
@@ -178,8 +189,8 @@ const CrearCliente = () => {
           (documento || '').trim(),
           (telefono || '').trim(),
           (direccion || '').trim(),
-          montoNum,
-          montoNum,
+          totalFactura,
+          totalFactura,
           valorCuota,
           String(numCuotas),
           todayDate,
@@ -206,7 +217,7 @@ const CrearCliente = () => {
         SyncWithSupabase(false, () => { });
       } catch { }
 
-      appAlert('Éxito', 'Venta registrada localmente. Se sincronizará de inmediato si tienes conexión, o se guardará offline para subir luego.');
+      appAlert('¡Venta guardada!', 'El crédito quedó registrado en tu teléfono. Se enviará automáticamente al sistema tan pronto tengas señal de internet.');
       setFormData({ nombre: '', apellido: '', alias: '', direccion: '', telefono: '', genero: '', documento: '', valor: '', plazo: '', interes: '' });
       setFormDataLabels({ plazo: '', interes: '' });
       navigation.navigate('Payments');

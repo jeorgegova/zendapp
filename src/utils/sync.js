@@ -23,7 +23,7 @@ export const SyncWithSupabase = async (toas = true, callLoading = () => { }) => 
     console.log('Se ejecuta sincronizacion');
 
     if (!state.isConnected) {
-      toas && Toast.show({ text1: 'Verifica tu conexión a internet' });
+      toas && Toast.show({ text1: 'Sin señal de internet', text2: 'Tus datos siguen guardados seguros en el teléfono' });
       return callLoading(false);
     }
 
@@ -198,7 +198,7 @@ const addToSyncCollection = (item, originalId, type) => {
 // Envía todo en batch a Supabase Edge Function / RPC
 const sendCollectedItems = async (toas) => {
   if (globalSyncCollection.length === 0) {
-    toas && Toast.show({ text1: 'Nada para sincronizar' });
+    toas && Toast.show({ text1: 'Todo al día', text2: 'No tienes movimientos pendientes por enviar' });
     return true;
   }
 
@@ -303,14 +303,15 @@ const sendCollectedItems = async (toas) => {
             targetCajaId = caja?.id || null;
           }
           if (!targetCajaId) throw new Error('No hay caja abierta para registrar el movimiento');
-          const { data: mv, error } = await supabase.from('cash_movements').insert([{
-            caja_id: targetCajaId,
-            tipo: item.detalle.tipo === 'gasto' ? 'retiro' : item.detalle.tipo,
-            descripcion: item.detalle.descripcion,
-            monto: item.detalle.valor
-          }]).select().single();
+          const valNum = parseFloat(item.detalle.valor) || 0;
+          const { data: mv, error } = await supabase.rpc('rpc_create_cash_movement', {
+            p_caja_id: targetCajaId,
+            p_tipo: item.detalle.tipo, // soporte nativo para 'gasto', 'ingreso', 'retiro'
+            p_descripcion: item.detalle.descripcion || 'Movimiento de caja',
+            p_monto: valNum
+          });
           if (error) throw error;
-          results.push({ idv: item.id, idn: mv.id, ok: true });
+          results.push({ idv: item.id, idn: mv?.id || item.id, ok: true });
         }
       } catch (err) {
         const msg = err.message || String(err);
@@ -327,7 +328,7 @@ const sendCollectedItems = async (toas) => {
 
     if (okItems.length > 0) {
       await processResponseAndUpdateTables(okItems);
-      toas && Toast.show({ text1: `Sincronizados ${okItems.length}/${results.length}` });
+      toas && Toast.show({ text1: '¡Sincronización exitosa!', text2: `Se enviaron ${okItems.length} registro(s) al sistema` });
     }
 
     if (errItems.length > 0) {
