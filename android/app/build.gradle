@@ -88,8 +88,8 @@ android {
         applicationId 'com.zendapp'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName '1.0'
+        versionCode 3
+        versionName '1.0.1'
     }
     signingConfigs {
         debug {
@@ -117,6 +117,11 @@ android {
             signingConfig signingConfigs.release
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging = false
         }
     }
 }
