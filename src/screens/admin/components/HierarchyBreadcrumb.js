@@ -98,9 +98,9 @@ export const HierarchyBreadcrumb = ({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'rgba(255, 255, 255, 0.90)',
     borderBottomWidth: 1,
-    borderBottomColor: apple.colors.separator,
+    borderBottomColor: 'rgba(234, 236, 240, 0.8)',
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 8,

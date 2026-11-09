@@ -214,24 +214,24 @@ export default function AdminUsuarios() {
       />
 
       {/* Segmented Filter Activos / Inactivos (Requisito 2) */}
-        <View style={{ marginHorizontal: 16, marginTop: 6, marginBottom: 4 }}>
-          <AnimatedSegmentedControl
-            options={[
-              {
-                key: 'activos',
-                label: 'Activos',
-                badge: activosCount,
-              },
-              {
-                key: 'inactivos',
-                label: 'Inactivos',
-                badge: inactivosCount,
-              },
-            ]}
-            selectedKey={statusFilter}
-            onChange={(key) => setStatusFilter(key)}
-          />
-        </View>
+      <View style={{ marginHorizontal: 16, marginTop: 6, marginBottom: 4 }}>
+        <AnimatedSegmentedControl
+          options={[
+            {
+              key: 'activos',
+              label: 'Activos',
+              badge: activosCount,
+            },
+            {
+              key: 'inactivos',
+              label: 'Inactivos',
+              badge: inactivosCount,
+            },
+          ]}
+          selectedKey={statusFilter}
+          onChange={(key) => setStatusFilter(key)}
+        />
+      </View>
 
       {/* Buscador */}
       <View style={styles.searchContainer}>
@@ -252,11 +252,11 @@ export default function AdminUsuarios() {
       </View>
 
       {/* Lista */}
-        {loading ? (
-          <View style={{ flex: 1, paddingTop: 10 }}>
-            <SkeletonList count={5} Component={SkeletonUserCard} />
-          </View>
-        ) : (
+      {loading ? (
+        <View style={{ flex: 1, paddingTop: 10 }}>
+          <SkeletonList count={5} Component={SkeletonUserCard} />
+        </View>
+      ) : (
         <FlatList
           data={filteredUsers}
           keyExtractor={(item) => item.id}
@@ -281,8 +281,8 @@ export default function AdminUsuarios() {
                 {search
                   ? 'No se encontraron coincidencias para la búsqueda'
                   : statusFilter === 'activos'
-                  ? 'Crea un nuevo usuario usando el botón +'
-                  : 'Los usuarios inhabilitados aparecerán en esta sección'}
+                    ? 'Crea un nuevo usuario usando el botón +'
+                    : 'Los usuarios inhabilitados aparecerán en esta sección'}
               </Text>
             </View>
           }
@@ -330,19 +330,23 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 8,
+    paddingTop: 10,
+    paddingBottom: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.90)',
+    borderBottomWidth: 1,
+    borderColor: 'rgba(234, 236, 240, 0.8)',
   },
   headerTitle: {
     fontSize: 26,
     fontWeight: '800',
     color: zendapp.colors.carbon,
-    letterSpacing: -0.5,
+    letterSpacing: -0.6,
   },
   headerSubtitle: {
-    fontSize: 13,
+    fontSize: 12,
     color: zendapp.colors.textSecondary,
-    marginTop: 2,
+    marginTop: 1,
+    fontWeight: '500',
   },
   headerActions: {
     flexDirection: 'row',

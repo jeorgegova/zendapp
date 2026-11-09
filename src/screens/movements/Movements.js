@@ -1080,13 +1080,13 @@ const styles = StyleSheet.create({
   header: {
     backgroundColor: 'rgba(255, 255, 255, 0.90)',
     paddingHorizontal: 16,
-    paddingTop: 8,
+    paddingTop: 10,
     paddingBottom: 12,
-    borderBottomWidth: 0.5,
-    borderColor: 'rgba(216, 220, 228, 0.8)',
+    borderBottomWidth: 1,
+    borderColor: 'rgba(234, 236, 240, 0.8)',
   },
-  headerTitle: { fontSize: 24, fontWeight: '700', color: apple.colors.label },
-  headerSub: { fontSize: 13, color: apple.colors.secondaryLabel, marginTop: 2 },
+  headerTitle: { fontSize: 26, fontWeight: '800', color: apple.colors.label, letterSpacing: -0.6 },
+  headerSub: { fontSize: 12, color: apple.colors.secondaryLabel, marginTop: 1, fontWeight: '500' },
   controls: {
     backgroundColor: 'rgba(255, 255, 255, 0.88)',
     margin: 16,
