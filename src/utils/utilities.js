@@ -3,8 +3,17 @@
  */
 import 'intl';
 import 'intl/locale-data/jsonp/en';
+import DeviceInfo from 'react-native-device-info';
 import { getDbConnection, getData } from '../database/db'
 export const versionGesper = 'Comercial';
+
+export function getAppVersion() {
+  try {
+    return DeviceInfo.getVersion() || '1.0.4';
+  } catch (_e) {
+    return '1.0.4';
+  }
+}
 import NetInfo from "@react-native-community/netinfo";
 import _BackgroundTimer from "react-native-background-timer";
 import AsyncStorage from '@react-native-async-storage/async-storage';

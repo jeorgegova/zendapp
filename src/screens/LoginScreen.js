@@ -25,6 +25,7 @@ import { request, PERMISSIONS, RESULTS } from 'react-native-permissions';
 import { zendapp } from '../theme/zendappTheme';
 import { AppleButton } from '../components/AppleButton';
 import { appAlert } from '../components/AppAlert';
+import { getAppVersion } from '../utils/utilities';
 
 export default function LoginScreen() {
   const { setAuthSession } = useAuth();
@@ -175,30 +176,36 @@ export default function LoginScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <Animated.View style={{ opacity: fade, transform: [{ translateY: slide }] }}>
-            {/* Header de Marca con Logo Oficial */}
-            <View style={styles.brandHeader}>
-              <Animated.View
-                style={[
-                  styles.logoContainer,
-                  { transform: [{ scale: logoScale }] },
-                ]}
-              >
-                <Image
-                  source={require('../assets/images/logo.png')}
-                  style={styles.logoImage}
-                  resizeMode="contain"
-                />
-              </Animated.View>
-              <Text style={styles.brandTitle}>ZENDAPP</Text>
-              {/* <View style={styles.brandTaglineWrap}>
-                <View style={styles.brandAccentDot} />
-                <Text style={styles.brandTagline}>Gestión de Cartera & Caja</Text>
-              </View> */}
-            </View>
+          <Animated.View
+            style={[
+              styles.innerContent,
+              { opacity: fade, transform: [{ translateY: slide }] },
+            ]}
+          >
+            <View style={styles.contentWrap}>
+              {/* Header de Marca con Logo Oficial */}
+              <View style={styles.brandHeader}>
+                <Animated.View
+                  style={[
+                    styles.logoContainer,
+                    { transform: [{ scale: logoScale }] },
+                  ]}
+                >
+                  <Image
+                    source={require('../assets/images/logo.png')}
+                    style={styles.logoImage}
+                    resizeMode="contain"
+                  />
+                </Animated.View>
+                <Text style={styles.brandTitle}>ZENDAPP</Text>
+                {/* <View style={styles.brandTaglineWrap}>
+                  <View style={styles.brandAccentDot} />
+                  <Text style={styles.brandTagline}>Gestión de Cartera & Caja</Text>
+                </View> */}
+              </View>
 
-            {/* Tarjeta Principal de Inicio de Sesión */}
-            <View style={styles.card}>
+              {/* Tarjeta Principal de Inicio de Sesión */}
+              <View style={styles.card}>
               <View style={styles.cardHeader}>
                 <Text style={styles.cardTitle}>Bienvenido</Text>
                 {/* <Text style={styles.cardSubtitle}>
@@ -300,18 +307,19 @@ export default function LoginScreen() {
                 </Text>
               </TouchableOpacity>
             </View>
+          </View>
 
-            {/* Footer de Seguridad y Versión */}
-            <View style={styles.footerWrap}>
-              <View style={styles.securityRow}>
-                <Icon name="shield" size={12} color={zendapp.colors.textTertiary} />
-                <Text style={styles.securityText}>
-                  Conexión segura y cifrada de extremo a extremo
-                </Text>
-              </View>
-              <Text style={styles.versionText}>Zendapp v1.0.0 · Todos los derechos reservados</Text>
+          {/* Footer de Seguridad y Versión */}
+          <View style={styles.footerWrap}>
+            <View style={styles.securityRow}>
+              <Icon name="shield" size={12} color={zendapp.colors.textTertiary} />
+              <Text style={styles.securityText}>
+                Conexión segura y cifrada de extremo a extremo
+              </Text>
             </View>
-          </Animated.View>
+            <Text style={styles.versionText}>Versión {getAppVersion()}</Text>
+          </View>
+        </Animated.View>
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -429,7 +437,14 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: 22,
     paddingTop: Platform.OS === 'ios' ? 60 : 44,
-    paddingBottom: 28,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+  },
+  innerContent: {
+    flex: 1,
+    justifyContent: 'space-between',
+  },
+  contentWrap: {
+    flex: 1,
     justifyContent: 'center',
   },
 
@@ -609,13 +624,14 @@ const styles = StyleSheet.create({
   // Footer
   footerWrap: {
     alignItems: 'center',
-    marginTop: 24,
+    marginTop: 20,
+    paddingBottom: 4,
   },
   securityRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginBottom: 4,
+    marginBottom: 6,
   },
   securityText: {
     fontSize: 11,
@@ -623,9 +639,10 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   versionText: {
-    fontSize: 11,
-    color: '#98A2B3',
-    fontWeight: '400',
+    fontSize: 12,
+    color: '#667085',
+    fontWeight: '600',
+    letterSpacing: 0.3,
   },
 
   // Modal / Bottom Sheet

@@ -1,6 +1,6 @@
 {
   "name": "Zendapp",
-  "version": "0.0.1",
+  "version": "1.0.1",
   "private": true,
   "scripts": {
     "android": "react-native run-android",
@@ -24,6 +24,7 @@
     "react-native": "0.77.0",
     "react-native-background-timer": "^2.4.1",
     "react-native-compressor": "^1.19.4",
+    "react-native-device-info": "^15.0.2",
     "react-native-element-dropdown": "^2.12.4",
     "react-native-geolocation-service": "^5.3.1",
     "react-native-image-picker": "^8.3.0",
